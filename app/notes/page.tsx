@@ -1,22 +1,22 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/components/auth-provider';
-import { useNotes } from '@/lib/hooks/use-notes';
-import { MarkdownEditor } from '@/components/markdown-editor';
-import { FolderSidebar } from '@/components/folder-sidebar';
-import { TagFilter } from '@/components/tag-filter';
-import { NoteList } from '@/components/note-list';
-import { SyncStatus } from '@/components/sync-status';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/auth-provider";
+import { useNotes } from "@/lib/hooks/use-notes";
+import { MarkdownEditor } from "@/components/markdown-editor";
+import { FolderSidebar } from "@/components/folder-sidebar";
+import { TagFilter } from "@/components/tag-filter";
+import { NoteList } from "@/components/note-list";
+import { SyncStatus } from "@/components/sync-status";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 import {
   Plus,
   Search,
@@ -27,8 +27,8 @@ import {
   ChevronLeft,
   Loader2,
   PenLine,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function NotesPage() {
   const router = useRouter();
@@ -51,14 +51,14 @@ export default function NotesPage() {
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Redirect if not authenticated
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      router.push('/');
+      router.push("/");
     }
   }, [authLoading, isAuthenticated, router]);
 
@@ -67,7 +67,7 @@ export default function NotesPage() {
     return notes.filter((note) => {
       // Folder filter
       if (selectedFolder !== null) {
-        if (selectedFolder === '_root') {
+        if (selectedFolder === "_root") {
           if (note.folder !== null) return false;
         } else {
           if (note.folder !== selectedFolder) return false;
@@ -100,9 +100,9 @@ export default function NotesPage() {
   // Create new note
   const handleCreateNote = useCallback(async () => {
     const newNote = await createNote({
-      title: 'Untitled',
-      content: '',
-      folder: selectedFolder === '_root' ? null : selectedFolder,
+      title: "Untitled",
+      content: "",
+      folder: selectedFolder === "_root" ? null : selectedFolder,
       tags: [],
     });
     setSelectedNoteId(newNote.id);
@@ -208,9 +208,7 @@ export default function NotesPage() {
           <SyncStatus status={syncStatus} onSync={syncNotes} />
 
           <DropdownMenu>
-            <DropdownMenuTrigger
-              className="inline-flex items-center justify-center gap-2 rounded-md text-sm transition-colors hover:bg-accent h-8 px-2"
-            >
+            <DropdownMenuTrigger className="inline-flex items-center justify-center gap-2 rounded-md text-sm transition-colors hover:bg-accent h-8 px-2">
               {user?.avatar_url ? (
                 <img
                   src={user.avatar_url}
@@ -220,10 +218,12 @@ export default function NotesPage() {
               ) : (
                 <User className="h-4 w-4 text-muted-foreground" />
               )}
-              <span className="hidden sm:inline text-sm text-muted-foreground">{user?.login}</span>
+              <span className="hidden sm:inline text-sm text-muted-foreground">
+                {user?.login}
+              </span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={logout}>
+              <DropdownMenuItem onClick={logout}>
                 <LogOut className="h-4 w-4 mr-2" />
                 Sign out
               </DropdownMenuItem>
@@ -237,13 +237,13 @@ export default function NotesPage() {
         {/* Sidebar */}
         <aside
           className={cn(
-            'border-r border-border/50 bg-sidebar flex-shrink-0 flex flex-col overflow-hidden transition-all duration-200',
+            "border-r border-border/50 bg-sidebar flex-shrink-0 flex flex-col overflow-hidden transition-all duration-200",
             // Desktop
-            'hidden lg:flex',
-            isSidebarOpen ? 'w-60' : 'w-0 border-r-0',
+            "hidden lg:flex",
+            isSidebarOpen ? "w-60" : "w-0 border-r-0",
             // Mobile overlay
             isMobileMenuOpen &&
-              'fixed inset-0 z-50 w-full lg:relative lg:w-60 flex bg-background'
+              "fixed inset-0 z-50 w-full lg:relative lg:w-60 flex bg-background"
           )}
         >
           <FolderSidebar
@@ -270,9 +270,9 @@ export default function NotesPage() {
         {/* Note list */}
         <div
           className={cn(
-            'w-64 border-r border-border/50 flex flex-col overflow-hidden flex-shrink-0 bg-background',
+            "w-64 border-r border-border/50 flex flex-col overflow-hidden flex-shrink-0 bg-background",
             // Hide on mobile when note is selected
-            selectedNote && 'hidden lg:flex'
+            selectedNote && "hidden lg:flex"
           )}
         >
           {/* Search and New button */}
@@ -312,9 +312,9 @@ export default function NotesPage() {
         {/* Editor */}
         <main
           className={cn(
-            'flex-1 flex flex-col overflow-hidden bg-background',
+            "flex-1 flex flex-col overflow-hidden bg-background",
             // Hide on mobile when no note is selected
-            !selectedNote && 'hidden lg:flex'
+            !selectedNote && "hidden lg:flex"
           )}
         >
           {selectedNote ? (
@@ -336,11 +336,7 @@ export default function NotesPage() {
               <p className="text-sm text-muted-foreground mb-6">
                 Choose from the list or create a new one
               </p>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleCreateNote}
-              >
+              <Button variant="secondary" size="sm" onClick={handleCreateNote}>
                 <Plus className="h-4 w-4 mr-1.5" />
                 New note
               </Button>

@@ -43,9 +43,11 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
 
   const logout = useCallback(async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      setUser(null);
-      globalThis.location.href = "/";
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (response.ok) {
+        setUser(null);
+        globalThis.location.href = "/";
+      }
     } catch (error) {
       console.error("Failed to logout:", error);
     }
