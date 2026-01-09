@@ -123,6 +123,14 @@ npm run lint     # Run ESLint
 - Apply responsive prefixes: `md:grid-cols-2`, `lg:text-xl`
 - Define design tokens in `app/globals.css` for reusable colors
 
+## Design & Style Guidelines
+
+### Visual Theme
+
+- **Notion-like dark theme**: Clean, minimalist aesthetic with neutral dark backgrounds
+- **Soft contrast**: Avoid harsh blacks; use warm grays and subtle borders
+- **Minimal UI chrome**: Reduce visual clutter; let content breathe
+
 ### File Naming
 
 - Components: kebab-case (e.g., `markdown-editor.tsx`)
