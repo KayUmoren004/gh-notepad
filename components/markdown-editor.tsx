@@ -138,7 +138,6 @@ export function MarkdownEditor({
           e.preventDefault();
           const file = item.getAsFile();
           if (file) {
-            // Upload the image
             const formData = new FormData();
             formData.append('file', file);
 
@@ -197,51 +196,60 @@ export function MarkdownEditor({
 
   return (
     <div className={cn('flex flex-col h-full bg-background', className)}>
-      {/* Title input */}
-      <div className="px-4 pt-4 pb-2">
+      {/* Title input - clean, minimal */}
+      <div className="px-6 pt-6 pb-2">
         <input
           type="text"
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          placeholder="Untitled Note"
-          className="w-full text-2xl font-semibold bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground"
+          placeholder="Untitled"
+          className="w-full text-2xl font-semibold bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground/50"
         />
       </div>
 
-      {/* Toolbar */}
-      <div className="flex items-center justify-between border-b border-border">
+      {/* Toolbar - subtle */}
+      <div className="flex items-center justify-between border-b border-border/50 mx-4">
         <EditorToolbar
           onFormat={handleFormat}
           onImageUpload={() => setIsImageDialogOpen(true)}
           className="border-b-0 flex-1"
         />
-        <div className="flex items-center gap-1 px-2">
+        <div className="flex items-center gap-0.5 px-1">
           <Button
             variant="ghost"
             size="sm"
-            className={cn('h-8 w-8 p-0', viewMode === 'edit' && 'bg-accent')}
+            className={cn(
+              'h-7 w-7 p-0 text-muted-foreground hover:text-foreground',
+              viewMode === 'edit' && 'bg-accent text-foreground'
+            )}
             title="Edit mode"
             onClick={() => setViewMode('edit')}
           >
-            <Edit3 className="h-4 w-4" />
+            <Edit3 className="h-3.5 w-3.5" />
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className={cn('h-8 w-8 p-0', viewMode === 'split' && 'bg-accent')}
+            className={cn(
+              'h-7 w-7 p-0 text-muted-foreground hover:text-foreground',
+              viewMode === 'split' && 'bg-accent text-foreground'
+            )}
             title="Split view"
             onClick={() => setViewMode('split')}
           >
-            <Columns2 className="h-4 w-4" />
+            <Columns2 className="h-3.5 w-3.5" />
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className={cn('h-8 w-8 p-0', viewMode === 'preview' && 'bg-accent')}
+            className={cn(
+              'h-7 w-7 p-0 text-muted-foreground hover:text-foreground',
+              viewMode === 'preview' && 'bg-accent text-foreground'
+            )}
             title="Preview mode"
             onClick={() => setViewMode('preview')}
           >
-            <Eye className="h-4 w-4" />
+            <Eye className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
@@ -253,7 +261,7 @@ export function MarkdownEditor({
           <div
             className={cn(
               'flex-1 flex flex-col overflow-hidden',
-              viewMode === 'split' && 'border-r border-border'
+              viewMode === 'split' && 'border-r border-border/50'
             )}
           >
             <textarea
@@ -263,8 +271,8 @@ export function MarkdownEditor({
               onPaste={handlePaste}
               onDrop={handleDrop}
               onDragOver={(e) => e.preventDefault()}
-              placeholder="Start writing in Markdown..."
-              className="flex-1 w-full p-4 bg-transparent resize-none outline-none font-mono text-sm text-foreground placeholder:text-muted-foreground"
+              placeholder="Start writing..."
+              className="flex-1 w-full p-6 bg-transparent resize-none outline-none font-mono text-sm text-foreground placeholder:text-muted-foreground/50 leading-relaxed"
               spellCheck={false}
             />
           </div>

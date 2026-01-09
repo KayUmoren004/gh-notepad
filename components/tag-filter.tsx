@@ -18,6 +18,7 @@ interface TagFilterProps {
 }
 
 const TAG_COLORS = [
+  '#9ca3af', // gray
   '#ef4444', // red
   '#f97316', // orange
   '#eab308', // yellow
@@ -25,7 +26,6 @@ const TAG_COLORS = [
   '#14b8a6', // teal
   '#3b82f6', // blue
   '#8b5cf6', // violet
-  '#ec4899', // pink
 ];
 
 export function TagFilter({
@@ -61,32 +61,32 @@ export function TagFilter({
   };
 
   return (
-    <div className="border-t border-border">
-      {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-border">
-        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <TagIcon className="h-4 w-4" />
+    <div className="border-t border-border/50">
+      {/* Header - minimal */}
+      <div className="flex items-center justify-between px-3 py-2">
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+          <TagIcon className="h-3 w-3" />
           Tags
-        </h2>
+        </span>
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 w-7 p-0"
+          className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
           onClick={() => setIsCreating(true)}
           title="New tag"
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-3.5 w-3.5" />
         </Button>
       </div>
 
       {/* New tag form */}
       {isCreating && (
-        <div className="p-3 border-b border-border space-y-2">
+        <div className="px-3 pb-3 space-y-2">
           <Input
             value={newTagName}
             onChange={(e) => setNewTagName(e.target.value)}
             placeholder="Tag name"
-            className="h-8 text-sm"
+            className="h-7 text-sm bg-background border-border/50"
             autoFocus
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleCreateTag();
@@ -101,8 +101,8 @@ export function TagFilter({
               <button
                 key={color}
                 className={cn(
-                  'w-5 h-5 rounded-full transition-transform',
-                  selectedColor === color && 'ring-2 ring-offset-2 ring-offset-background ring-primary scale-110'
+                  'w-4 h-4 rounded-full transition-transform',
+                  selectedColor === color && 'ring-1 ring-offset-1 ring-offset-background ring-foreground/50 scale-110'
                 )}
                 style={{ backgroundColor: color }}
                 onClick={() => setSelectedColor(color)}
@@ -110,12 +110,13 @@ export function TagFilter({
             ))}
           </div>
           <div className="flex gap-2">
-            <Button size="sm" className="flex-1" onClick={handleCreateTag}>
+            <Button size="sm" className="flex-1 h-7 text-xs" onClick={handleCreateTag}>
               Create
             </Button>
             <Button
               size="sm"
               variant="ghost"
+              className="h-7 text-xs"
               onClick={() => {
                 setIsCreating(false);
                 setNewTagName('');
@@ -128,9 +129,9 @@ export function TagFilter({
       )}
 
       {/* Tag list */}
-      <div className="p-3 flex flex-wrap gap-2">
+      <div className="px-3 pb-3 flex flex-wrap gap-1.5">
         {tags.length === 0 && !isCreating && (
-          <p className="text-xs text-muted-foreground">No tags yet</p>
+          <p className="text-xs text-muted-foreground/70">No tags</p>
         )}
 
         {tags.map((tag) => {
@@ -140,42 +141,41 @@ export function TagFilter({
           return (
             <Badge
               key={tag.name}
-              variant={isSelected ? 'default' : 'outline'}
+              variant="outline"
               className={cn(
-                'cursor-pointer transition-all group pr-1',
-                isSelected && 'ring-1 ring-offset-1 ring-offset-background'
+                'cursor-pointer transition-all group text-xs py-0.5 px-2 border-transparent',
+                isSelected ? 'ring-1 ring-offset-1 ring-offset-background' : 'opacity-70 hover:opacity-100'
               )}
               style={{
-                backgroundColor: isSelected ? tag.color : 'transparent',
-                borderColor: tag.color,
-                color: isSelected ? '#fff' : tag.color,
+                backgroundColor: isSelected ? tag.color + '20' : 'transparent',
+                borderColor: tag.color + '40',
+                color: tag.color,
+                ['--tw-ring-color' as string]: tag.color + '60',
               }}
               onClick={() => onToggleTag(tag.name)}
             >
-              <span className="mr-1">{tag.name}</span>
-              <span className="text-xs opacity-70">({count})</span>
+              <span>{tag.name}</span>
+              <span className="ml-1 opacity-60">({count})</span>
               <button
-                className="ml-1 opacity-0 group-hover:opacity-100 hover:bg-black/20 rounded p-0.5 transition-opacity"
+                className="ml-1 opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDeleteTag(tag.name);
                 }}
               >
-                <X className="h-3 w-3" />
+                <X className="h-2.5 w-2.5" />
               </button>
             </Badge>
           );
         })}
 
         {selectedTags.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 text-xs"
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             onClick={() => selectedTags.forEach(onToggleTag)}
           >
-            Clear filters
-          </Button>
+            Clear
+          </button>
         )}
       </div>
     </div>

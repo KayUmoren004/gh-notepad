@@ -26,6 +26,7 @@ import {
   User,
   ChevronLeft,
   Loader2,
+  PenLine,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -151,9 +152,9 @@ export default function NotesPage() {
   if (authLoading || (notesLoading && notes.length === 0)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-muted-foreground">Loading your notes...</p>
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading notes...</p>
         </div>
       </div>
     );
@@ -161,20 +162,20 @@ export default function NotesPage() {
 
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
-      {/* Header */}
-      <header className="h-14 border-b border-border flex items-center justify-between px-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
+      {/* Header - minimal chrome */}
+      <header className="h-12 border-b border-border/50 flex items-center justify-between px-3 flex-shrink-0 bg-background/80 backdrop-blur-sm">
+        <div className="flex items-center gap-2">
           {/* Mobile menu button */}
           <Button
             variant="ghost"
             size="sm"
-            className="lg:hidden h-8 w-8 p-0"
+            className="lg:hidden h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           >
             {isMobileMenuOpen ? (
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4" />
             ) : (
-              <Menu className="h-5 w-5" />
+              <Menu className="h-4 w-4" />
             )}
           </Button>
 
@@ -182,10 +183,10 @@ export default function NotesPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="hidden lg:flex h-8 w-8 p-0"
+            className="hidden lg:flex h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-4 w-4" />
           </Button>
 
           {/* Back button when note is selected on mobile */}
@@ -193,33 +194,33 @@ export default function NotesPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="lg:hidden h-8 w-8 p-0"
+              className="lg:hidden h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
               onClick={() => setSelectedNoteId(null)}
             >
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronLeft className="h-4 w-4" />
             </Button>
           )}
 
-          <h1 className="font-semibold text-foreground">Notes</h1>
+          <span className="text-sm font-medium text-foreground">Notes</span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <SyncStatus status={syncStatus} onSync={syncNotes} />
 
           <DropdownMenu>
             <DropdownMenuTrigger
-              className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 px-3"
+              className="inline-flex items-center justify-center gap-2 rounded-md text-sm transition-colors hover:bg-accent h-8 px-2"
             >
               {user?.avatar_url ? (
                 <img
                   src={user.avatar_url}
                   alt={user.login}
-                  className="h-6 w-6 rounded-full"
+                  className="h-5 w-5 rounded-full"
                 />
               ) : (
-                <User className="h-4 w-4" />
+                <User className="h-4 w-4 text-muted-foreground" />
               )}
-              <span className="hidden sm:inline">{user?.name || user?.login}</span>
+              <span className="hidden sm:inline text-sm text-muted-foreground">{user?.login}</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={logout}>
@@ -236,13 +237,13 @@ export default function NotesPage() {
         {/* Sidebar */}
         <aside
           className={cn(
-            'border-r border-border bg-card flex-shrink-0 flex flex-col overflow-hidden transition-all duration-200',
+            'border-r border-border/50 bg-sidebar flex-shrink-0 flex flex-col overflow-hidden transition-all duration-200',
             // Desktop
             'hidden lg:flex',
-            isSidebarOpen ? 'w-64' : 'w-0 border-r-0',
+            isSidebarOpen ? 'w-60' : 'w-0 border-r-0',
             // Mobile overlay
             isMobileMenuOpen &&
-              'fixed inset-0 z-50 w-full lg:relative lg:w-64 flex'
+              'fixed inset-0 z-50 w-full lg:relative lg:w-60 flex bg-background'
           )}
         >
           <FolderSidebar
@@ -269,23 +270,29 @@ export default function NotesPage() {
         {/* Note list */}
         <div
           className={cn(
-            'w-72 border-r border-border flex flex-col overflow-hidden flex-shrink-0',
+            'w-64 border-r border-border/50 flex flex-col overflow-hidden flex-shrink-0 bg-background',
             // Hide on mobile when note is selected
             selectedNote && 'hidden lg:flex'
           )}
         >
           {/* Search and New button */}
-          <div className="p-3 border-b border-border flex items-center gap-2">
+          <div className="p-2 border-b border-border/50 flex items-center gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search notes..."
-                className="pl-8 h-9"
+                placeholder="Search..."
+                className="pl-7 h-8 text-sm bg-transparent border-border/50"
               />
             </div>
-            <Button size="sm" className="h-9" onClick={handleCreateNote}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+              onClick={handleCreateNote}
+              title="New note"
+            >
               <Plus className="h-4 w-4" />
             </Button>
           </div>
@@ -305,7 +312,7 @@ export default function NotesPage() {
         {/* Editor */}
         <main
           className={cn(
-            'flex-1 flex flex-col overflow-hidden',
+            'flex-1 flex flex-col overflow-hidden bg-background',
             // Hide on mobile when no note is selected
             !selectedNote && 'hidden lg:flex'
           )}
@@ -320,18 +327,22 @@ export default function NotesPage() {
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-              <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-                <Plus className="h-8 w-8 text-muted-foreground" />
+              <div className="h-12 w-12 rounded-lg bg-muted/50 flex items-center justify-center mb-4">
+                <PenLine className="h-5 w-5 text-muted-foreground" />
               </div>
-              <h2 className="text-xl font-semibold text-foreground mb-2">
-                No note selected
+              <h2 className="text-base font-medium text-foreground mb-1">
+                Select a note
               </h2>
-              <p className="text-muted-foreground mb-4">
-                Select a note from the list or create a new one
+              <p className="text-sm text-muted-foreground mb-6">
+                Choose from the list or create a new one
               </p>
-              <Button onClick={handleCreateNote}>
-                <Plus className="h-4 w-4 mr-2" />
-                New Note
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleCreateNote}
+              >
+                <Plus className="h-4 w-4 mr-1.5" />
+                New note
               </Button>
             </div>
           )}

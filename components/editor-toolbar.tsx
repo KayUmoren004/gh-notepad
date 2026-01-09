@@ -29,13 +29,13 @@ const toolbarItems = [
 
 export function EditorToolbar({ onFormat, onImageUpload, className }: EditorToolbarProps) {
   return (
-    <div className={cn('flex items-center gap-0.5 p-2 border-b border-border bg-card/50', className)}>
+    <div className={cn('flex items-center gap-0.5 py-2', className)}>
       {toolbarItems.map((item, index) => {
         if (item.type === 'separator') {
           return (
             <div
               key={`sep-${index}`}
-              className="w-px h-5 bg-border mx-1"
+              className="w-px h-4 bg-border/50 mx-1"
             />
           );
         }
@@ -47,7 +47,7 @@ export function EditorToolbar({ onFormat, onImageUpload, className }: EditorTool
             key={item.format}
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-accent"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-accent/50"
             title={item.title}
             onClick={() => {
               if (item.format === 'image') {
@@ -57,7 +57,7 @@ export function EditorToolbar({ onFormat, onImageUpload, className }: EditorTool
               }
             }}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="h-3.5 w-3.5" />
           </Button>
         );
       })}
