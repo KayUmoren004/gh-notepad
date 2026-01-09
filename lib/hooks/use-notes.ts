@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Note, NoteWithMeta, Metadata, SyncStatus } from '../types';
+import { useState, useEffect, useCallback, useRef } from "react";
+import type { Note, NoteWithMeta, Metadata, SyncStatus } from "../types";
 import {
   getCachedNotes,
   setCachedNotes,
@@ -18,7 +18,7 @@ import {
   onOnlineStatusChange,
   generateTempId,
   isTempId,
-} from '../offline-storage';
+} from "../offline-storage";
 
 interface UseNotesOptions {
   autoSync?: boolean;
@@ -31,7 +31,9 @@ interface UseNotesReturn {
   syncStatus: SyncStatus;
   isLoading: boolean;
   error: string | null;
-  createNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => Promise<NoteWithMeta>;
+  createNote: (
+    note: Omit<Note, "id" | "createdAt" | "updatedAt">
+  ) => Promise<NoteWithMeta>;
   updateNote: (id: string, updates: Partial<Note>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
   syncNotes: () => Promise<void>;
@@ -56,6 +58,7 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
   });
 
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const syncNotesRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
   // Initialize from cache
   useEffect(() => {
@@ -82,7 +85,8 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
       setSyncStatus((prev) => ({ ...prev, isOnline: online }));
 
       if (online && autoSync) {
-        syncNotes();
+        // Use ref to always call the latest syncNotes function
+        syncNotesRef.current?.();
       }
     });
 
@@ -94,13 +98,13 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
     if (!isOnline()) return;
 
     try {
-      const response = await fetch('/api/notes');
+      const response = await fetch("/api/notes");
       if (!response.ok) {
         if (response.status === 401) {
           // Not authenticated, use cached data
           return;
         }
-        throw new Error('Failed to fetch notes');
+        throw new Error("Failed to fetch notes");
       }
 
       const data = await response.json();
@@ -114,8 +118,8 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
         lastSyncTime: new Date().toISOString(),
       }));
     } catch (err) {
-      console.error('Failed to fetch notes:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch notes');
+      console.error("Failed to fetch notes:", err);
+      setError(err instanceof Error ? err.message : "Failed to fetch notes");
     }
   }, []);
 
@@ -138,10 +142,10 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
 
     for (const action of queue) {
       try {
-        if (action.type === 'create' && action.note) {
-          const response = await fetch('/api/notes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+        if (action.type === "create" && action.note) {
+          const response = await fetch("/api/notes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(action.note),
           });
 
@@ -149,18 +153,16 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
             const { note: serverNote } = await response.json();
             // Update local cache with server ID
             setNotes((prev) =>
-              prev.map((n) =>
-                n.id === action.noteId ? { ...serverNote } : n
-              )
+              prev.map((n) => (n.id === action.noteId ? { ...serverNote } : n))
             );
             removeFromSyncQueue(action.id);
           }
-        } else if (action.type === 'update' && action.note) {
+        } else if (action.type === "update" && action.note) {
           const cachedNote = notes.find((n) => n.id === action.noteId);
           if (cachedNote?.sha) {
             const response = await fetch(`/api/notes/${action.noteId}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ ...action.note, sha: cachedNote.sha }),
             });
 
@@ -172,12 +174,12 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
               removeFromSyncQueue(action.id);
             }
           }
-        } else if (action.type === 'delete') {
+        } else if (action.type === "delete") {
           const cachedNote = notes.find((n) => n.id === action.noteId);
           if (cachedNote?.sha && !isTempId(action.noteId)) {
             const response = await fetch(
               `/api/notes/${action.noteId}?sha=${cachedNote.sha}`,
-              { method: 'DELETE' }
+              { method: "DELETE" }
             );
 
             if (response.ok) {
@@ -189,7 +191,7 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
           }
         }
       } catch (err) {
-        console.error('Sync error:', err);
+        console.error("Sync error:", err);
       }
     }
 
@@ -204,6 +206,11 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
       lastSyncTime: new Date().toISOString(),
     }));
   }, [fetchNotes, notes]);
+
+  // Keep ref in sync with latest syncNotes function
+  useEffect(() => {
+    syncNotesRef.current = syncNotes;
+  }, [syncNotes]);
 
   // Debounced sync
   const debouncedSync = useCallback(() => {
@@ -220,7 +227,9 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
 
   // Create note
   const createNote = useCallback(
-    async (noteData: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>): Promise<NoteWithMeta> => {
+    async (
+      noteData: Omit<Note, "id" | "createdAt" | "updatedAt">
+    ): Promise<NoteWithMeta> => {
       const now = new Date().toISOString();
       const tempId = generateTempId();
 
@@ -237,7 +246,7 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
 
       // Queue for sync
       addToSyncQueue({
-        type: 'create',
+        type: "create",
         noteId: tempId,
         note: newNote,
       });
@@ -267,14 +276,12 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
       };
 
       // Update local state immediately
-      setNotes((prev) =>
-        prev.map((n) => (n.id === id ? updatedNote : n))
-      );
+      setNotes((prev) => prev.map((n) => (n.id === id ? updatedNote : n)));
       updateCachedNote(updatedNote);
 
       // Queue for sync
       addToSyncQueue({
-        type: 'update',
+        type: "update",
         noteId: id,
         note: updatedNote,
       });
@@ -298,7 +305,7 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
 
       // Queue for sync
       addToSyncQueue({
-        type: 'delete',
+        type: "delete",
         noteId: id,
       });
 
@@ -327,13 +334,13 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
 
       if (isOnline()) {
         try {
-          await fetch('/api/metadata', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'folder', name }),
+          await fetch("/api/metadata", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "folder", name }),
           });
         } catch (err) {
-          console.error('Failed to add folder:', err);
+          console.error("Failed to add folder:", err);
         }
       }
     },
@@ -353,11 +360,14 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
 
       if (isOnline()) {
         try {
-          await fetch(`/api/metadata?type=folder&name=${encodeURIComponent(name)}`, {
-            method: 'DELETE',
-          });
+          await fetch(
+            `/api/metadata?type=folder&name=${encodeURIComponent(name)}`,
+            {
+              method: "DELETE",
+            }
+          );
         } catch (err) {
-          console.error('Failed to remove folder:', err);
+          console.error("Failed to remove folder:", err);
         }
       }
     },
@@ -379,13 +389,13 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
 
       if (isOnline()) {
         try {
-          await fetch('/api/metadata', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'tag', ...tag }),
+          await fetch("/api/metadata", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "tag", ...tag }),
           });
         } catch (err) {
-          console.error('Failed to add tag:', err);
+          console.error("Failed to add tag:", err);
         }
       }
     },
@@ -405,11 +415,14 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesReturn {
 
       if (isOnline()) {
         try {
-          await fetch(`/api/metadata?type=tag&name=${encodeURIComponent(name)}`, {
-            method: 'DELETE',
-          });
+          await fetch(
+            `/api/metadata?type=tag&name=${encodeURIComponent(name)}`,
+            {
+              method: "DELETE",
+            }
+          );
         } catch (err) {
-          console.error('Failed to remove tag:', err);
+          console.error("Failed to remove tag:", err);
         }
       }
     },
