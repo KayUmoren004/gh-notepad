@@ -47,17 +47,18 @@ export async function POST(request: NextRequest) {
 
     const note = await createNote(token, {
       title,
-      content: content || '',
+      content: content || "",
       folder: folder || null,
       tags: tags || [],
     });
 
     return NextResponse.json({ note }, { status: 201 });
   } catch (error) {
-    console.error('Failed to create note:', error);
-    return NextResponse.json(
-      { error: 'Failed to create note' },
-      { status: 500 }
-    );
+    console.error("Failed to create note:", error);
+    const message =
+      error instanceof Error && error.message
+        ? error.message
+        : "Failed to create note";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

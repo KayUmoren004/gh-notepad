@@ -6,7 +6,7 @@ import type {
   Metadata,
 } from "./types";
 
-const REPO_NAME = "gh-notepad";
+const REPO_NAME = "my-notes";
 const NOTES_DIR = "notes";
 const METADATA_FILE = "metadata.json";
 

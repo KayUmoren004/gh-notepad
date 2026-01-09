@@ -14,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "gh-notepad | Markdown Notes with GitHub Sync",
-  description: "A beautiful markdown notepad that stores your notes in your own GitHub repository. Write anywhere, sync everywhere, own your data forever.",
+  title: "Notepad - Write Anywhere, Own Your Data Forever",
+  description:
+    "A beautiful markdown notepad that stores your notes in your own GitHub repository. Write anywhere, sync everywhere, own your data forever.",
   keywords: ["notes", "markdown", "github", "sync", "notepad", "offline"],
 };
 

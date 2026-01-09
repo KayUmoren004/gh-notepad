@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Plus, X, Tag as TagIcon } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
-import type { Tag, Note } from '@/lib/types';
+import { useState } from "react";
+import { Plus, X, Tag as TagIcon } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import type { Tag, Note } from "@/lib/types";
 
 interface TagFilterProps {
   notes: Note[];
@@ -18,14 +18,14 @@ interface TagFilterProps {
 }
 
 const TAG_COLORS = [
-  '#9ca3af', // gray
-  '#ef4444', // red
-  '#f97316', // orange
-  '#eab308', // yellow
-  '#22c55e', // green
-  '#14b8a6', // teal
-  '#3b82f6', // blue
-  '#8b5cf6', // violet
+  "#9ca3af", // gray
+  "#ef4444", // red
+  "#f97316", // orange
+  "#eab308", // yellow
+  "#22c55e", // green
+  "#14b8a6", // teal
+  "#3b82f6", // blue
+  "#8b5cf6", // violet
 ];
 
 export function TagFilter({
@@ -37,25 +37,22 @@ export function TagFilter({
   onDeleteTag,
 }: TagFilterProps) {
   const [isCreating, setIsCreating] = useState(false);
-  const [newTagName, setNewTagName] = useState('');
+  const [newTagName, setNewTagName] = useState("");
   const [selectedColor, setSelectedColor] = useState(TAG_COLORS[0]);
 
   // Count notes per tag
-  const tagCounts = notes.reduce(
-    (acc, note) => {
-      note.tags.forEach((tag) => {
-        acc[tag] = (acc[tag] || 0) + 1;
-      });
-      return acc;
-    },
-    {} as Record<string, number>
-  );
+  const tagCounts = notes.reduce((acc, note) => {
+    note.tags.forEach((tag) => {
+      acc[tag] = (acc[tag] || 0) + 1;
+    });
+    return acc;
+  }, {} as Record<string, number>);
 
   const handleCreateTag = async () => {
     if (!newTagName.trim()) return;
 
     await onCreateTag({ name: newTagName.trim(), color: selectedColor });
-    setNewTagName('');
+    setNewTagName("");
     setIsCreating(false);
     setSelectedColor(TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)]);
   };
@@ -89,20 +86,22 @@ export function TagFilter({
             className="h-7 text-sm bg-background border-border/50"
             autoFocus
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleCreateTag();
-              if (e.key === 'Escape') {
+              if (e.key === "Enter") handleCreateTag();
+              if (e.key === "Escape") {
                 setIsCreating(false);
-                setNewTagName('');
+                setNewTagName("");
               }
             }}
           />
           <div className="flex items-center gap-1">
             {TAG_COLORS.map((color) => (
               <button
+                title="Select color"
                 key={color}
                 className={cn(
-                  'w-4 h-4 rounded-full transition-transform',
-                  selectedColor === color && 'ring-1 ring-offset-1 ring-offset-background ring-foreground/50 scale-110'
+                  "w-4 h-4 rounded-full transition-transform",
+                  selectedColor === color &&
+                    "ring-1 ring-offset-1 ring-offset-background ring-foreground/50 scale-110"
                 )}
                 style={{ backgroundColor: color }}
                 onClick={() => setSelectedColor(color)}
@@ -110,7 +109,11 @@ export function TagFilter({
             ))}
           </div>
           <div className="flex gap-2">
-            <Button size="sm" className="flex-1 h-7 text-xs" onClick={handleCreateTag}>
+            <Button
+              size="sm"
+              className="flex-1 h-7 text-xs"
+              onClick={handleCreateTag}
+            >
               Create
             </Button>
             <Button
@@ -119,7 +122,7 @@ export function TagFilter({
               className="h-7 text-xs"
               onClick={() => {
                 setIsCreating(false);
-                setNewTagName('');
+                setNewTagName("");
               }}
             >
               Cancel
@@ -143,20 +146,23 @@ export function TagFilter({
               key={tag.name}
               variant="outline"
               className={cn(
-                'cursor-pointer transition-all group text-xs py-0.5 px-2 border-transparent',
-                isSelected ? 'ring-1 ring-offset-1 ring-offset-background' : 'opacity-70 hover:opacity-100'
+                "cursor-pointer transition-all group text-xs py-0.5 px-2 border-transparent",
+                isSelected
+                  ? "ring-1 ring-offset-1 ring-offset-background"
+                  : "opacity-70 hover:opacity-100"
               )}
               style={{
-                backgroundColor: isSelected ? tag.color + '20' : 'transparent',
-                borderColor: tag.color + '40',
+                backgroundColor: isSelected ? tag.color + "20" : "transparent",
+                borderColor: tag.color + "40",
                 color: tag.color,
-                ['--tw-ring-color' as string]: tag.color + '60',
+                ["--tw-ring-color" as string]: tag.color + "60",
               }}
               onClick={() => onToggleTag(tag.name)}
             >
               <span>{tag.name}</span>
               <span className="ml-1 opacity-60">({count})</span>
               <button
+                title="Delete tag"
                 className="ml-1 opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
                 onClick={(e) => {
                   e.stopPropagation();
