@@ -38,7 +38,7 @@ The spec's Implementation Decisions section is the source of truth; in brief:
 
 ## Codebase conventions
 
-- **Modules** live in `lib/<module>/`, named after the architecture above (`notebook-format`, `device-store`, `sync-engine`, `remote`, `github-gateway`, `auth`), with their public interface in `index.ts`. Callers and tests import the module, never its internal files. Server-only modules begin with `import "server-only"`.
+- **Modules** live in `lib/<module>/`, named after the architecture above (`notebook-format`, `device-store`, `sync-engine`, `remote`, `notebook-api` (the route handlers' logic), `github-gateway`, `auth`), with their public interface in `index.ts`. Callers and tests import the module, never its internal files. Server-only modules begin with `import "server-only"`.
 - **Composition**: modules take their dependencies (`fetch`, clock, gateway) as arguments; a `…FromEnv(env, deps)` function wires them from environment variables, and route handlers are one-line adapters over it (see `app/api/auth/`).
 - **Tests**: Vitest files are `*.test.ts` beside the code, run in the `node` environment with `fake-indexeddb` installed. Playwright specs are `e2e/*.spec.ts` importing `test` and `expect` from `e2e/support/fixtures.ts`, and run at desktop and phone sizes. Read `test/fake-github/README.md` before testing a GitHub call or adding a fake endpoint or seed data.
 - **Service worker**: `app/sw.ts` caches code only (the precached build and the signed-in `/notes` shell) and leaves `/api/*` to the network. Playwright blocks it; offline specs opt in with `test.use({ serviceWorkers: "allow" })` and use `e2e/support/service-worker.ts`.

@@ -17,6 +17,24 @@ describe("fake GitHub over HTTP", () => {
     expect(response.status).toBe(200);
   });
 
+  it("seeds a notebook, plays an outside edit and shows its files through the control API", async () => {
+    server = await startFakeGitHubServer({ port: 0 });
+    const control = connectFakeGitHub(server.url);
+
+    await control.addRepo({ owner: "octo-member", name: "my-notes", files: { "Seeded.md": "Hello\n" } });
+    await control.addRepo({ owner: "octo-member", name: "my-notes", files: { "Ignored.md": "Already exists\n" } });
+    await control.commitFiles("octo-member", "my-notes", {
+      message: "Edit on github.com",
+      files: { "Seeded.md": null, "Recipes/Pancakes.md": "Flour\n" },
+    });
+
+    expect(await control.files("octo-member", "my-notes")).toEqual({ "Recipes/Pancakes.md": "Flour\n" });
+    expect(server.fake.commits("octo-member", "my-notes").map((commit) => commit.message)).toEqual([
+      "Edit on github.com",
+      "Initial commit",
+    ]);
+  });
+
   it("runs the OAuth web flow for a user seeded through the control API", async () => {
     server = await startFakeGitHubServer({ port: 0 });
     const app = server.fake.addOAuthApp({ callbackUrl: "http://localhost:3100/api/auth/callback" });
