@@ -81,6 +81,32 @@ describe("buildNotebookTrees", () => {
     ]);
   });
 
+  it("shows folders that hold no notes, nested where their paths say, counting no notes", () => {
+    const [tree] = buildNotebookTrees([note("Projects/Plan.md")], {
+      folders: [
+        { notebook: "mira/my-notes", path: "Projects/Garden/Beds" },
+        { notebook: "mira/my-notes", path: "Archive" },
+        // One that notes already make: nothing doubles.
+        { notebook: "mira/my-notes", path: "Projects" },
+      ],
+    });
+
+    expect(tree.folders.map((f) => [f.name, f.noteCount])).toEqual([
+      ["Archive", 0],
+      ["Projects", 1],
+    ]);
+    const garden = tree.folders[1].folders[0];
+    expect(garden.path).toBe("Projects/Garden");
+    expect(garden.noteCount).toBe(0);
+    expect(garden.folders.map((f) => f.path)).toEqual(["Projects/Garden/Beds"]);
+    expect(tree.noteCount).toBe(1);
+  });
+
+  it("shows a notebook that holds only an empty folder", () => {
+    const trees = buildNotebookTrees([], { folders: [{ notebook: "mira/my-notes", path: "Ideas" }] });
+    expect(trees.map((t) => [t.name, t.folders.map((f) => f.name)])).toEqual([["my-notes", ["Ideas"]]]);
+  });
+
   it("keeps emoji and non-Latin folder and note names as they are", () => {
     const [tree] = buildNotebookTrees([note("日記/🌱 春.md"), note("Заметки/Идеи.md")]);
 

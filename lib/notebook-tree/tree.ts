@@ -62,14 +62,21 @@ export function folderKey(notebook: string, path: string): string {
   return `folder:${notebook}:${path}`;
 }
 
+/** A folder that exists on its own (kept by a `.gitkeep`), whether or not notes are in it. */
+export interface TreeFolderInput {
+  notebook: string;
+  path: string;
+}
+
 /**
- * The tree of every notebook: folders derived from the notes' paths, nested to
- * any depth, folders before notes and each sorted alphabetically. Notebooks in
- * `notebooks` are included even when they hold no notes yet.
+ * The tree of every notebook: folders derived from the notes' paths and from
+ * `folders` (the ones kept while empty), nested to any depth, folders before
+ * notes and each sorted alphabetically. Notebooks in `notebooks` are included
+ * even when they hold nothing yet.
  */
 export function buildNotebookTrees(
   notes: Iterable<TreeNoteInput>,
-  { notebooks = [] }: { notebooks?: readonly string[] } = {},
+  { notebooks = [], folders = [] }: { notebooks?: readonly string[]; folders?: Iterable<TreeFolderInput> } = {},
 ): NotebookTree[] {
   const trees = new Map<string, NotebookTree>();
   const tree = (id: string): NotebookTree => {
@@ -82,23 +89,28 @@ export function buildNotebookTrees(
   };
   for (const id of notebooks) tree(id);
 
-  for (const note of notes) {
-    const root = tree(note.notebook);
-    root.noteCount++;
-    let level: { folders: TreeFolder[]; notes: TreeNote[] } = root;
-    if (note.folder) {
-      let path = "";
-      for (const name of note.folder.split("/")) {
-        path = path ? `${path}/${name}` : name;
-        let folder = level.folders.find((candidate) => candidate.path === path);
-        if (!folder) {
-          folder = { kind: "folder", notebook: note.notebook, name, path, folders: [], notes: [], noteCount: 0 };
-          level.folders.push(folder);
-        }
-        folder.noteCount++;
-        level = folder;
+  /** The folder at `path` in `notebook`, made along with the folders above it; `count` adds a note to each. */
+  const folderAt = (notebook: string, path: string, count: boolean) => {
+    let level: { folders: TreeFolder[]; notes: TreeNote[] } = tree(notebook);
+    if (!path) return level;
+    let current = "";
+    for (const name of path.split("/")) {
+      current = current ? `${current}/${name}` : name;
+      let folder = level.folders.find((candidate) => candidate.path === current);
+      if (!folder) {
+        folder = { kind: "folder", notebook, name, path: current, folders: [], notes: [], noteCount: 0 };
+        level.folders.push(folder);
       }
+      if (count) folder.noteCount++;
+      level = folder;
     }
+    return level;
+  };
+
+  for (const folder of folders) folderAt(folder.notebook, folder.path, false);
+  for (const note of notes) {
+    tree(note.notebook).noteCount++;
+    const level = folderAt(note.notebook, note.folder, true);
     level.notes.push({ kind: "note", id: note.id, notebook: note.notebook, title: note.title, folder: note.folder });
   }
 
