@@ -1,10 +1,12 @@
 /**
  * The world end-to-end tests run in: the app (a production build) and the
- * fake GitHub it is pointed at, each on its own port.
+ * fake GitHub it is pointed at, each on its own port. `E2E_APP_PORT` and
+ * `E2E_FAKE_GITHUB_PORT` move them, so checkouts side by side don't reuse
+ * each other's servers.
  */
 
-export const appUrl = "http://localhost:3100";
-export const fakeGitHubUrl = "http://localhost:4010";
+export const appUrl = `http://localhost:${process.env.E2E_APP_PORT ?? 3100}`;
+export const fakeGitHubUrl = `http://localhost:${process.env.E2E_FAKE_GITHUB_PORT ?? 4010}`;
 
 /** GitHub logins with a known place at the access gate. */
 export const members = {
