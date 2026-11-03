@@ -17,6 +17,7 @@ import {
 } from "@/lib/source-mode";
 import { useNote, useNotepad } from "./notepad-provider";
 import { SyncIndicator } from "./sync-indicator";
+import { TagField } from "./tag-field";
 
 /** What either mode's editor offers: focus, and the cursor's place for carrying it across a switch. */
 type BodyHandle = Pick<RichTextModeHandle, "focus" | "selection" | "placeCursor">;
@@ -134,6 +135,7 @@ export function NoteEditor({
             autoComplete="off"
             className="w-full min-w-0 bg-transparent text-3xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground"
           />
+          <TagField noteId={noteId} className="-mt-2" />
           {images.element}
           {mode === "source" ? (
             <SourceMode
