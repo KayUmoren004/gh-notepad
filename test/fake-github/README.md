@@ -8,7 +8,8 @@ An in-memory GitHub for tests: the subset of github.com OAuth and the REST API t
 | --- | --- |
 | `index.ts` | Public in-process API: `createFakeGitHub()` and its types. |
 | `fake-github.ts` | Composes state and routes; seeding and inspection methods; the `routes` list. |
-| `state.ts` | The in-memory world (users, OAuth apps, codes, tokens) and the functions that change it. |
+| `state.ts` | The in-memory world (users, OAuth apps, codes, tokens, repositories, the request log) and the functions that change it. |
+| `git.ts` | Git's object model: blobs, trees and commits under the SHA-1 git itself computes, tree building and flattening, ancestry. |
 | `router.ts` | `FakeRoute`, path matching, and response helpers (`json`, `apiError`, `html`). |
 | `endpoints/*.ts` | One module per GitHub area, each exporting `FakeRoute[]`. |
 | `endpoints/fake-only.ts` | Routes GitHub doesn't have, under `/_fake/`: the control API and avatar images. |
@@ -34,7 +35,15 @@ Drive the parts a person does on github.com with the fake's methods, and observe
 - `accessTokensFor(login)` lists the tokens issued, e.g. to show a forged callback never reached the token exchange.
 - `createFakeGitHub({ now })` takes a clock for code and token expiry.
 
-`lib/auth/sign-in.test.ts` is the worked example.
+Notebooks and Git data:
+
+- `addRepo({ owner, name, private?, files? })` seeds a repository (private by default) with an initial commit holding `files`, or empty without them.
+- `commitFiles(owner, name, { message, files })` plays an edit made outside the app (on github.com, another editor): one commit on the default branch, where a `null` content deletes the path.
+- `files(owner, name)` reads every file on the default branch; `commits(owner, name)` lists its history, newest first, with the paths each commit `added`, `modified` or `removed`; `repo(owner, name)` returns the repository record.
+- `requests()` lists every GitHub request answered (`{ method, path, status }`, control routes aside), e.g. to show an unchanged notebook costs one `304`.
+- `issueAccessToken(login)` hands out a token without the OAuth dance, for tests that call the REST API directly.
+
+`lib/auth/sign-in.test.ts` is the worked example for sign-in. For anything that syncs, use `createWorld()` from `test/devices.ts`: it runs the real auth and notebook routes against a fake, and `signIn(login)` returns a simulated device (its own IndexedDB and cookies) with the real device store, remote and sync engine. `holdGitHub(match)` pauses a request on its way to GitHub so a test can act while it is in flight; `callApi(path, { as })` calls the notebook routes directly. `lib/sync-engine/sync-engine.test.ts` is the worked example.
 
 ## Over HTTP (Playwright, local development)
 
@@ -59,10 +68,21 @@ To develop against the fake instead of a real OAuth App, run `npm run fake-githu
 | `POST /login/oauth/authorize` | The chooser's form: redirects with `code` and `state`, or `error=access_denied`. |
 | `POST /login/oauth/access_token` | Form or JSON body; JSON reply when `Accept: application/json`, form-encoded otherwise. GitHub's error bodies with HTTP 200: `incorrect_client_credentials`, `redirect_uri_mismatch`, `bad_verification_code` (unknown, expired, reused, or wrong PKCE verifier). Codes are single-use and last 10 minutes. `gho_` tokens by default; `ghu_` (8 h) plus `ghr_` refresh tokens when the app has `expiringTokens` or the request asks for `offline_access`. |
 | `GET /user` | The token's user, with `X-OAuth-Scopes`; 401 `Bad credentials` for a missing, unknown or expired token. |
+| `GET /repos/:owner/:repo` | The repository; 404 for a private one the caller doesn't own (collaborators come with shared notebooks). |
+| `POST /user/repos` | Creates a repository for the token's user; `auto_init` adds an initial commit with `README.md`. 422 `name already exists on this account` when taken. |
+| `GET /repos/:owner/:repo/commits/:ref` | With `Accept: application/vnd.github.sha`: just the SHA, `ETag: "<sha>"`, and `304` when `If-None-Match` names it. 409 on an empty repository. |
+| `GET /repos/:owner/:repo/git/ref/heads/:branch`, `PATCH …/git/refs/heads/:branch` | Read and move a branch. Without `force`, a commit that doesn't descend from the branch gets 422 `Update is not a fast forward`. |
+| `GET`/`POST /repos/:owner/:repo/git/blobs` | Blobs as base64 wrapped at 60 characters; create from `utf-8` or `base64`. |
+| `GET`/`POST /repos/:owner/:repo/git/trees` | `GET` takes a tree SHA, commit SHA or branch name, with `?recursive=1`. `POST` takes `base_tree` and entries with `content`, `sha`, or `sha: null` to delete (422 for a path the base doesn't have); empty directories vanish. |
+| `GET`/`POST /repos/:owner/:repo/git/commits` | Commit objects; the author defaults to the token's user and their no-reply address. |
+| Git Data on an empty repository | 409 `Git Repository is empty.` |
 | anything else | 404 with GitHub's `{ message: "Not Found" }` body. |
 | `GET /_fake/health` | Readiness probe for Playwright. |
 | `POST /_fake/users` | Seeds a user: `{ login, name? }`. |
 | `GET /_fake/users/:login/tokens` | Access tokens issued to `login`. |
+| `POST /_fake/repos` | Seeds a repository: `{ owner, name, private?, files? }` (idempotent). |
+| `POST /_fake/repos/:owner/:repo/commits` | An outside edit: `{ message, files }`, `null` deleting a path. |
+| `GET /_fake/repos/:owner/:repo/files` | Every file on the default branch, by path. |
 | `GET /_fake/avatars/:login` | The SVG that `avatar_url` points at, so runs never reach the internet. |
 
 ## Adding an endpoint

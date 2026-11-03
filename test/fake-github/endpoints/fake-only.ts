@@ -1,6 +1,20 @@
 import { apiError, escapeHtml, json, type FakeRoute } from "../router";
-import { accessTokensFor, addUser, findUser } from "../state";
+import { accessTokensFor, addRepo, addUser, commitFiles, findRepo, findUser, readFiles } from "../state";
+import { repoJson } from "./repos";
 import { userJson } from "./users";
+
+async function readObject(request: Request): Promise<Record<string, unknown>> {
+  const body: unknown = await request.json().catch(() => null);
+  return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+}
+
+/** A `{ path: content }` map; with `nullable`, `null` (delete) is allowed too. */
+function fileMap(value: unknown, nullable: boolean): Record<string, string | null> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const files = value as Record<string, unknown>;
+  const valid = Object.values(files).every((content) => typeof content === "string" || (nullable && content === null));
+  return valid ? (files as Record<string, string | null>) : null;
+}
 
 /**
  * Endpoints real GitHub doesn't have, all under `/_fake/`: the control API that
@@ -29,6 +43,46 @@ export const fakeOnlyRoutes: FakeRoute[] = [
     method: "GET",
     path: "/_fake/users/:login/tokens",
     handle: ({ params, state }) => json(accessTokensFor(state, params.login)),
+  },
+  {
+    method: "POST",
+    path: "/_fake/repos",
+    handle: async ({ request, url, state }) => {
+      const body = await readObject(request);
+      const files = body.files === undefined ? undefined : fileMap(body.files, false);
+      if (typeof body.owner !== "string" || typeof body.name !== "string" || files === null) {
+        return apiError(422, "Validation Failed: owner, name and files ({ path: content }) are required");
+      }
+      const repo = addRepo(state, {
+        owner: body.owner,
+        name: body.name,
+        private: body.private !== false,
+        files: files as Record<string, string> | undefined,
+      });
+      return json(repoJson(state, repo, url.origin), { status: 201 });
+    },
+  },
+  {
+    method: "POST",
+    path: "/_fake/repos/:owner/:repo/commits",
+    handle: async ({ request, params, state }) => {
+      const repo = findRepo(state, params.owner, params.repo);
+      if (!repo) return apiError(404, "Not Found");
+      const body = await readObject(request);
+      const files = fileMap(body.files, true);
+      if (typeof body.message !== "string" || !files) {
+        return apiError(422, "Validation Failed: message and files ({ path: content | null }) are required");
+      }
+      return json({ sha: commitFiles(state, repo, { message: body.message, files }) }, { status: 201 });
+    },
+  },
+  {
+    method: "GET",
+    path: "/_fake/repos/:owner/:repo/files",
+    handle: ({ params, state }) => {
+      const repo = findRepo(state, params.owner, params.repo);
+      return repo ? json(readFiles(repo)) : apiError(404, "Not Found");
+    },
   },
   {
     method: "GET",

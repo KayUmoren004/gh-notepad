@@ -8,6 +8,7 @@ test("a note is saved on the device, synced, still there after a reload, and on 
   page,
   signInAs,
   signInOnAnotherDevice,
+  fakeGitHub,
 }, testInfo) => {
   const title = `Groceries ${testInfo.project.name} ${Date.now()}`;
   await signInAs(members.allowed);
@@ -26,6 +27,9 @@ test("a note is saved on the device, synced, still there after a reload, and on 
 
   const status = page.getByRole("status");
   await expect(status).toHaveText("Synced", { timeout: 20_000 });
+  // Synced means the notebook on GitHub has it: a Markdown file named after the title.
+  const files = await fakeGitHub.files(members.allowed, "my-notes");
+  expect(files[`${title}.md`]).toMatch(/^---\nid: [0-9a-f-]{36}\n[\s\S]*\n---\n- Milk\n- Bread$/);
 
   await page.reload();
   await page.getByRole("button", { name: title }).click();
