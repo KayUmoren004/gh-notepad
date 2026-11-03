@@ -49,6 +49,8 @@ export interface Note {
 export interface DeviceState {
   /** Every note on the device, by id. Unchanged notes keep their identity across states. */
   notes: ReadonlyMap<string, Note>;
+  /** Every notebook sync has located on GitHub, by id: the personal notebook once found or created, and every shared one. */
+  notebooks: ReadonlyMap<string, Notebook>;
   /** Counts local edits, so sync can tell typing from its own changes. */
   edits: number;
 }
@@ -156,6 +158,13 @@ export interface DeviceStore {
   /** A URL showing the device's copy of the attachment at `path`, or `null` if this device holds none. */
   attachmentSrc: (notebook: string, path: string) => string | null;
 
+  /**
+   * Removes a notebook from this device with every note and attachment it
+   * holds: after leaving it, or once the member can no longer open it. Edits
+   * not yet synced go with it. The personal notebook can't be forgotten.
+   */
+  forgetNotebook: (id: string) => void;
+
   readonly sync: SyncLedger;
 
   /** Writes everything pending to IndexedDB now. */
@@ -207,24 +216,34 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
   const objectUrls = new Map<string, string>();
 
   const listeners = new Set<() => void>();
-  let state: DeviceState = { notes: new Map([...entries].map(([key, entry]) => [key, view(entry)])), edits: 0 };
+  let state: DeviceState = {
+    notes: new Map([...entries].map(([key, entry]) => [key, view(entry)])),
+    notebooks: notebookViews(notebooks),
+    edits: 0,
+  };
 
   const pendingNotes = new Set<string>();
   const removedNotes = new Set<string>();
   const pendingNotebooks = new Set<string>();
+  const removedNotebooks = new Set<string>();
   const pendingAttachmentRows = new Set<string>();
+  const removedAttachmentRows = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let writing: Promise<void> = Promise.resolve();
 
-  /** Publishes new views of the changed notes, then tells subscribers. */
-  function publish(changed: Iterable<string>, edits = 0) {
+  /** Publishes new views of the changed notes (and of the notebooks, when they changed), then tells subscribers. */
+  function publish(changed: Iterable<string>, edits = 0, { notebooksChanged = false } = {}) {
     const notes = new Map(state.notes);
     for (const key of changed) {
       const entry = entries.get(key);
       if (entry) notes.set(key, view(entry));
       else notes.delete(key);
     }
-    state = { notes, edits: state.edits + edits };
+    state = {
+      notes,
+      notebooks: notebooksChanged ? notebookViews(notebooks) : state.notebooks,
+      edits: state.edits + edits,
+    };
     for (const listener of [...listeners]) listener();
   }
 
@@ -254,15 +273,20 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
       const row = notebooks.get(id);
       return row ? [{ ...row }] : [];
     });
+    const forgotten = [...removedNotebooks];
     const images = [...pendingAttachmentRows].flatMap((key) => {
       const row = attachments.get(key);
       return row ? [{ ...row }] : [];
     });
+    const removedImages = [...removedAttachmentRows].map(attachmentKeyParts);
     pendingNotes.clear();
     removedNotes.clear();
     pendingNotebooks.clear();
+    removedNotebooks.clear();
     pendingAttachmentRows.clear();
-    if (notes.length === 0 && removed.length === 0 && books.length === 0 && images.length === 0) return writing;
+    removedAttachmentRows.clear();
+    const nothing = [notes, removed, books, forgotten, images, removedImages].every((list) => list.length === 0);
+    if (nothing) return writing;
 
     writing = writing.then(async () => {
       try {
@@ -270,14 +294,18 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
           if (notes.length > 0) await db.notes.bulkPut(notes);
           if (removed.length > 0) await db.notes.bulkDelete(removed);
           if (books.length > 0) await db.notebooks.bulkPut(books);
+          if (forgotten.length > 0) await db.notebooks.bulkDelete(forgotten);
           if (images.length > 0) await db.attachments.bulkPut(images);
+          if (removedImages.length > 0) await db.attachments.bulkDelete(removedImages);
         });
       } catch (error) {
         // Keep everything pending and try again; nothing in memory is lost.
         for (const row of notes) pendingNotes.add(row.key);
         for (const key of removed) removedNotes.add(key);
         for (const row of books) pendingNotebooks.add(row.id);
+        for (const id of forgotten) removedNotebooks.add(id);
         for (const row of images) pendingAttachmentRows.add(attachmentKey(row));
+        for (const [notebook, path] of removedImages) removedAttachmentRows.add(attachmentKey({ notebook, path }));
         schedule();
         console.error("Saving to this device failed; retrying", error);
         return;
@@ -335,8 +363,11 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
 
     locate: (id, { owner, repo, branch }) => {
       const row = notebooks.get(id);
+      if (row && row.owner === owner && row.repo === repo && row.branch === branch) return;
       notebooks.set(id, { id, owner, repo, branch, head: row?.branch === branch ? row.head : null });
       pendingNotebooks.add(id);
+      removedNotebooks.delete(id);
+      publish([], 0, { notebooksChanged: true });
       schedule();
     },
 
@@ -499,6 +530,31 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
       return url;
     },
 
+    forgetNotebook: (id) => {
+      if (id === personalNotebook) return;
+      const keys = [...entries].filter(([, { row }]) => row.notebook === id).map(([key]) => key);
+      for (const key of keys) {
+        entries.delete(key);
+        pendingNotes.delete(key);
+        removedNotes.add(key);
+      }
+      for (const [key, row] of [...attachments]) {
+        if (row.notebook !== id) continue;
+        attachments.delete(key);
+        pendingAttachmentRows.delete(key);
+        removedAttachmentRows.add(key);
+        const url = objectUrls.get(key);
+        if (url) {
+          URL.revokeObjectURL(url);
+          objectUrls.delete(key);
+        }
+      }
+      if (notebooks.delete(id)) removedNotebooks.add(id);
+      pendingNotebooks.delete(id);
+      publish(keys, 0, { notebooksChanged: true });
+      schedule();
+    },
+
     sync,
     flush,
     close: async () => {
@@ -516,6 +572,16 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
 
 function attachmentKey({ notebook, path }: { notebook: string; path: string }): string {
   return `${notebook}\u0000${path}`;
+}
+
+/** The `[notebook, path]` primary key an attachment row is stored under. */
+function attachmentKeyParts(key: string): [string, string] {
+  const at = key.indexOf("\u0000");
+  return [key.slice(0, at), key.slice(at + 1)];
+}
+
+function notebookViews(rows: ReadonlyMap<string, NotebookRow>): ReadonlyMap<string, Notebook> {
+  return new Map([...rows].map(([id, row]) => [id, { ...row }]));
 }
 
 function parse(text: string): Entry["parsed"] {
