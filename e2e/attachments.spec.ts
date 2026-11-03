@@ -38,14 +38,15 @@ const imagesIn = (body: Locator) => body.locator("img:not(.ProseMirror-separator
 const refusal = (page: Page) => page.getByRole("alert").filter({ hasText: /^Images/ });
 
 /**
- * Resolves once a note holding `marker` is written to this device (the store's
- * trailing write, ADR 0002), so a reload right after an edit can't outrun it.
+ * Resolves once the note titled `title` holds `marker` on this device (the
+ * store's trailing write, ADR 0002), so a reload right after an edit can't
+ * outrun it. Other notes in the notebook may hold the marker already.
  */
-async function waitUntilOnDevice(page: Page, marker: string) {
+async function waitUntilOnDevice(page: Page, title: string, marker: string) {
   await expect
     .poll(
       () =>
-        page.evaluate(async (wanted) => {
+        page.evaluate(async ({ path, wanted }) => {
           const names = (await indexedDB.databases()).flatMap((db) =>
             db.name?.startsWith("gh-notepad-account-") ? [db.name] : [],
           );
@@ -56,18 +57,18 @@ async function waitUntilOnDevice(page: Page, marker: string) {
               opening.onerror = () => reject(opening.error);
             });
             try {
-              const rows = await new Promise<{ text: string }[]>((resolve, reject) => {
+              const rows = await new Promise<{ path: string; text: string }[]>((resolve, reject) => {
                 const reading = db.transaction("notes").objectStore("notes").getAll();
-                reading.onsuccess = () => resolve(reading.result as { text: string }[]);
+                reading.onsuccess = () => resolve(reading.result as { path: string; text: string }[]);
                 reading.onerror = () => reject(reading.error);
               });
-              if (rows.some((row) => row.text.includes(wanted))) return true;
+              if (rows.some((row) => row.path === path && row.text.includes(wanted))) return true;
             } finally {
               db.close();
             }
           }
           return false;
-        }, marker),
+        }, { path: `${title}.md`, wanted: marker }),
       { timeout: 5_000 },
     )
     .toBe(true);
@@ -105,7 +106,7 @@ test.describe("offline", () => {
     // Shown from the device's copy, before anything reaches the notebook.
     await expectLoadedImage(body, /^blob:/);
     await expect(page.getByRole("status")).toHaveText("Saved · Offline", { timeout: 20_000 });
-    await waitUntilOnDevice(page, "/attachments/");
+    await waitUntilOnDevice(page, title, "/attachments/");
 
     await page.reload();
     await page.getByRole("button", { name: title }).click();
