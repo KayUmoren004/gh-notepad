@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# gh-notepad
 
-## Getting Started
+An invite-only, local-first notepad: notes are Markdown files in GitHub repositories (notebooks) that each member owns or collaborates on. Everything is saved on the device first and synced to GitHub in the background. The v2 rebuild is planned in spec issue #1; vocabulary is in [`GLOSSARY.md`](GLOSSARY.md) and decisions in [`docs/adr/`](docs/adr/).
 
-First, run the development server:
+## Requirements
+
+- Node.js 22.13 or later (CI and Vercel use Node 24).
+- A GitHub OAuth App whose callback URL is `<NEXT_PUBLIC_APP_URL>/api/auth/callback`. The app requests the scopes `repo read:user` with PKCE.
+
+## Environment
+
+| Variable | Purpose |
+| --- | --- |
+| `NEXT_PUBLIC_APP_URL` | The app's public origin, e.g. `https://notes.example.com` (`http://localhost:3000` in development). Cookies are `Secure` when it is `https`. |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | The OAuth App's credentials. |
+| `SESSION_SECRET` | At least 32 random characters; encrypts the session cookie. Changing it signs everyone out. |
+| `OWNER_GITHUB_USER` | The owner's GitHub login; always allowed to sign in. |
+| `ALLOWED_GITHUB_USERS` | Other logins allowed to sign in, comma-separated (case-insensitive). |
+| `GITHUB_API_BASE_URL`, `GITHUB_OAUTH_BASE_URL` | Test-only: point the GitHub gateway at the fake GitHub. Leave unset in production. |
+
+## Development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # http://localhost:3000, with the variables above in .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+To work without a real OAuth App, run the app against the fake GitHub: see [`test/fake-github/README.md`](test/fake-github/README.md#over-http-playwright-local-development).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Checks
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run typecheck  # route types, then tsc
+npm run lint
+npm test           # Vitest
+npm run test:e2e   # Playwright: builds the app and starts it next to the fake GitHub
+```
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+CI runs all four on every push (`.github/workflows/ci.yml`). Locally, Playwright reuses an app or fake GitHub already listening on ports 3100 and 4010; stop them to test a fresh build.

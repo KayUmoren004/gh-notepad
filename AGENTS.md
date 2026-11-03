@@ -36,6 +36,13 @@ The spec's Implementation Decisions section is the source of truth; in brief:
 - **Remote → route handlers → GitHub gateway**: the browser never calls GitHub; the gateway owns all GitHub knowledge, and its base URLs are configurable for tests.
 - **Fake GitHub**: the single test seam for anything touching GitHub, used in-process by unit tests and over HTTP by Playwright.
 
+## Codebase conventions
+
+- **Modules** live in `lib/<module>/`, named after the architecture above (`notebook-format`, `device-store`, `sync-engine`, `remote`, `github-gateway`, `auth`), with their public interface in `index.ts`. Callers and tests import the module, never its internal files. Server-only modules begin with `import "server-only"`.
+- **Composition**: modules take their dependencies (`fetch`, clock, gateway) as arguments; a `…FromEnv(env, deps)` function wires them from environment variables, and route handlers are one-line adapters over it (see `app/api/auth/`).
+- **Tests**: Vitest files are `*.test.ts` beside the code, run in the `node` environment with `fake-indexeddb` installed. Playwright specs are `e2e/*.spec.ts` importing `test` and `expect` from `e2e/support/fixtures.ts`, and run at desktop and phone sizes. Read `test/fake-github/README.md` before testing a GitHub call or adding a fake endpoint or seed data.
+- **Styling**: `hover:` is gated to fine pointers, so an arbitrary `[&:hover]`-style variant bypasses the gate and fails `e2e/baseline.spec.ts`. Motion comes from the tokens and the `pressable` and `animate-enter` utilities in `app/globals.css`. Server Components take button styles from `components/ui/button-variants.ts`, because every export of a `"use client"` module is a client reference on the server.
+
 ## Code style
 
 - TypeScript strict; `unknown` plus type guards instead of `any`; shared types live with the module that owns them.
