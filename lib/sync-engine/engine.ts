@@ -8,7 +8,12 @@ import { planPush } from "./push";
 import { reconcile, type RemoteNote } from "./reconcile";
 
 export type SyncStatus =
-  | { state: "idle"; lastSyncedAt: number | null }
+  /**
+   * `failedAttachments`, when any: attachments this device holds that its
+   * notebook refused (over the deployment's size limit). The notes synced
+   * without them; they stay listed in the store until removed.
+   */
+  | { state: "idle"; lastSyncedAt: number | null; failedAttachments?: number }
   /** `progress` while a push takes several commits: `done` of `total` have landed. */
   | { state: "syncing"; progress?: { done: number; total: number } }
   /** The app's server can't be reached; sync resumes on reconnect. */
@@ -159,7 +164,8 @@ export function createSyncEngine({
     try {
       await syncNotebook(store.personalNotebook);
       failures = 0;
-      outcome = { state: "idle", lastSyncedAt: timers.now() };
+      const failed = store.getState().failedAttachments.length;
+      outcome = { state: "idle", lastSyncedAt: timers.now(), ...(failed > 0 ? { failedAttachments: failed } : {}) };
     } catch (error) {
       failure = error;
       outcome = failedStatus(error);

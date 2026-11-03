@@ -22,7 +22,9 @@
  *   with back-off. Device data is never touched by any of this.
  * - Attachments inserted on the device are stored on GitHub as blobs first,
  *   then named in the same commit as the notes that embed them
- *   (`attachments.ts`).
+ *   (`attachments.ts`). One the deployment refuses for good (over its size
+ *   limit) is marked failed in the store and left out, so the notes still
+ *   sync; the idle status counts them (`failedAttachments`).
  */
 export {
   createSyncEngine,

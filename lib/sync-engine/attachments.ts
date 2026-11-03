@@ -1,6 +1,6 @@
 import { attachmentLink } from "@/lib/attachments";
 import type { DeviceStore } from "@/lib/device-store";
-import type { FileChange, NotebookRef, Remote } from "@/lib/remote";
+import { RemoteError, type FileChange, type NotebookRef, type Remote } from "@/lib/remote";
 import type { ChangeUnit } from "./batches";
 
 /** The attachments a push adds to the notebook, ready to go into its commit. */
@@ -14,7 +14,9 @@ export interface AttachmentsPush {
  * Gets every attachment pending on this device into GitHub as a blob, so the
  * next commit can name it beside the notes that embed it. Bytes stored by an
  * earlier attempt (a push that lost the race, or was interrupted) are not sent
- * again: the store remembers their blob SHA.
+ * again: the store remembers their blob SHA. One the deployment refuses for
+ * good (over its size limit) is marked failed in the store and left out, so
+ * the notes still go: sending it again would only be refused again.
  */
 export async function stageAttachments(
   store: DeviceStore,
@@ -26,7 +28,13 @@ export async function stageAttachments(
   for (const attachment of store.sync.pendingAttachments(notebook)) {
     let { sha } = attachment;
     if (!sha) {
-      sha = await remote.storeAttachment(ref, { type: attachment.type, bytes: attachment.bytes });
+      try {
+        sha = await remote.storeAttachment(ref, { type: attachment.type, bytes: attachment.bytes });
+      } catch (error) {
+        if (!(error instanceof RemoteError) || error.kind !== "refused") throw error;
+        store.sync.failAttachment(notebook, attachment.path, error.message);
+        continue;
+      }
       store.sync.recordAttachmentBlob(notebook, attachment.path, sha);
     }
     push.changes.push({ path: attachment.path, sha });
