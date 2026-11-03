@@ -21,6 +21,8 @@ export interface NoteRow {
   revision: number;
   /** `null` until the note first reaches its notebook. */
   base: AgreedVersion | null;
+  /** Deleted for good from the Trash: gone from the UI, kept here until the push that removes `base.path` lands. */
+  deleted?: true;
 }
 
 export interface NotebookRow {
@@ -77,6 +79,10 @@ export interface FolderRow {
   path: string;
   /** The path its marker has in the notebook; `null` until a push lands it. */
   base: string | null;
+  /** When the folder was moved to the Trash (ISO 8601), while its path is under `.trash/`; written into its marker. */
+  trashed?: string;
+  /** Deleted for good from the Trash: gone from the UI, kept here until the push that removes its marker lands. */
+  deleted?: true;
 }
 
 export interface DatabaseOptions {

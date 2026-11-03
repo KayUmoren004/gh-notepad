@@ -4,12 +4,16 @@ import {
   folderOfPath,
   isInFolder,
   isInsideOrSelf,
+  isTrashPath,
   movedPath,
   notePath,
+  originalPath,
+  purgeTime,
   readNote,
   sanitizeFolderName,
   sanitizeTitle,
   titleOfPath,
+  trashPath,
   uniqueFolderName,
   uniqueTitle,
   UNTITLED,
@@ -51,6 +55,12 @@ export interface Note {
   updated: string | null;
   /** The note's share link id while it is shared, from its frontmatter. */
   share: string | null;
+  /**
+   * When the note was moved to the Trash (ISO 8601, `""` when its file doesn't
+   * say) while it is there: its `path` is then under `.trash/`. `null` for a
+   * note that isn't in the Trash.
+   */
+  trashed: string | null;
   /** Its latest edits are stored on this device and survive a reload. */
   saved: boolean;
   /** This device's version matches the notebook's on GitHub. */
@@ -60,10 +70,12 @@ export interface Note {
 /** A folder kept on its own, whether or not notes are in it: made with "New folder", or marked by a `.gitkeep` in the notebook. */
 export interface Folder {
   notebook: string;
-  /** `Projects/Garden`. */
+  /** `Projects/Garden`, or `.trash/Projects/Garden` while in the Trash. */
   path: string;
   /** Its marker in the notebook is where this device has it. */
   synced: boolean;
+  /** When the folder was moved to the Trash (ISO 8601, `""` when unknown) while it is there; `null` otherwise. */
+  trashed: string | null;
 }
 
 export interface DeviceState {
@@ -115,8 +127,10 @@ export interface SyncRecord {
   revision: number;
   /** `null` for a note that has never reached its notebook. */
   base: AgreedVersion | null;
-  /** The device's version differs from `base`: there is something to push. */
+  /** The device's version differs from `base`: there is something to push. Never for a deleted note. */
   dirty: boolean;
+  /** Deleted for good from the Trash: the push removes `base.path` (never `null` then), and the note is gone once it lands. */
+  deleted: boolean;
 }
 
 /** A folder kept on its own, as sync sees it. */
@@ -124,14 +138,18 @@ export interface FolderRecord {
   path: string;
   /** Where its marker is in the notebook; `null` for one that has never reached it. */
   base: string | null;
-  /** The marker must be added or moved: there is something to push. */
+  /** The marker must be added or moved: there is something to push. Never for a deleted folder. */
   dirty: boolean;
+  /** When it was moved to the Trash while it is there (`""` when unknown), the content of its marker; `null` otherwise. */
+  trashed: string | null;
+  /** Deleted for good from the Trash: the push removes the marker at `base`, and the folder is gone once it lands. */
+  deleted: boolean;
 }
 
 /** What a pull decided for one folder kept on its own. */
 export type FolderPullChange =
-  /** The folder as it now stands on the device, and where the notebook has its marker (`null`: nowhere, yet). */
-  | { path: string; base: string | null }
+  /** The folder as it now stands on the device, and where the notebook has its marker (`null`: nowhere, yet); `trashed` is what a trashed marker says. */
+  | { path: string; base: string | null; trashed?: string }
   /** Its marker left the notebook and nothing changed here: the folder goes from the device too. */
   | { path: string; remove: true };
 
@@ -187,7 +205,8 @@ export interface SyncLedger {
   ) => void;
   /**
    * Records a successful push: each pushed version becomes the agreed base,
-   * and each folder in `folders` has its marker where this device has it.
+   * each folder in `folders` has its marker where this device has it, and
+   * the notes (by id) and folders (by path) in `removed` are gone for good.
    * Text typed while the push was in flight stays, and keeps the note unsynced.
    */
   applyPush: (
@@ -195,7 +214,14 @@ export interface SyncLedger {
     head: string,
     pushed: readonly { id: string; base: AgreedVersion }[],
     folders?: readonly string[],
+    removed?: { notes: readonly string[]; folders: readonly string[] },
   ) => void;
+  /**
+   * Marks for deletion, as a push would be asked to, every note and folder
+   * that has been in the Trash since before `before` (a time) for the
+   * retention period; returns how many of each. Not an edit: sync's own doing.
+   */
+  purge: (notebook: string, before: number) => { notes: number; folders: number };
 
   /** Attachments inserted on this device that no commit holds yet, and the notebook hasn't refused. */
   pendingAttachments: (notebook: string) => PendingAttachment[];
@@ -255,6 +281,33 @@ export interface DeviceStore {
    * Returns the folder's new path.
    */
   moveFolder: (notebook: string, path: string, destination: string) => string;
+
+  /**
+   * Moves a note to the Trash: its file goes under `.trash/` at its original
+   * path (title de-duplicated there), recording when in its frontmatter. It
+   * keeps its id, and leaves the tree, tags, search and Recent.
+   */
+  trashNote: (id: string) => void;
+  /**
+   * Moves a folder to the Trash with everything in it, in one step: every
+   * note under it, and its markers, go under `.trash/` (the name
+   * de-duplicated there); the folder gets a marker if it had none, so the
+   * Trash lists it as one thing. Returns the folder's trashed path.
+   */
+  trashFolder: (notebook: string, path: string) => string;
+  /** Puts a trashed note back where it was, recreating its folder and de-duplicating its title there. */
+  restoreNote: (id: string) => void;
+  /** Puts a trashed folder (`.trash/Garden`) back where it was with everything in it, its name de-duplicated; returns its path. */
+  restoreFolder: (notebook: string, path: string) => string;
+  /**
+   * Removes a trashed note for good: gone from the device at once, and from
+   * the notebook with the next push. A note that isn't in the Trash is left alone.
+   */
+  deleteNoteForever: (id: string) => void;
+  /** Removes a trashed folder for good with everything in it. */
+  deleteFolderForever: (notebook: string, path: string) => void;
+  /** Removes everything in a notebook's Trash for good. */
+  emptyTrash: (notebook: string) => void;
 
   /**
    * Stores an image on this device, to be committed under `attachments/` with
@@ -342,7 +395,7 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
 
   const listeners = new Set<() => void>();
   let state: DeviceState = {
-    notes: new Map([...entries].map(([key, entry]) => [key, view(entry)])),
+    notes: new Map([...entries].filter(([, entry]) => !entry.row.deleted).map(([key, entry]) => [key, view(entry)])),
     notebooks: notebookViews(notebooks),
     folders: folderViews(),
     edits: 0,
@@ -363,7 +416,12 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
 
   function folderViews(): Map<string, Folder> {
     return new Map(
-      [...folders].map(([key, row]) => [key, { notebook: row.notebook, path: row.path, synced: row.base === row.path }]),
+      [...folders]
+        .filter(([, row]) => !row.deleted)
+        .map(([key, row]) => [
+          key,
+          { notebook: row.notebook, path: row.path, synced: row.base === row.path, trashed: isTrashPath(row.path) ? (row.trashed ?? "") : null },
+        ]),
     );
   }
 
@@ -376,7 +434,7 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
     const notes = new Map(state.notes);
     for (const key of changed) {
       const entry = entries.get(key);
-      if (entry) notes.set(key, view(entry));
+      if (entry && !entry.row.deleted) notes.set(key, view(entry));
       else notes.delete(key);
     }
     state = {
@@ -489,7 +547,7 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
   function titlesBeside(notebook: string, folder: string, except?: string): string[] {
     const titles: string[] = [];
     for (const [key, { row }] of entries) {
-      if (key !== except && row.notebook === notebook && folderOfPath(row.path) === folder) {
+      if (key !== except && !row.deleted && row.notebook === notebook && folderOfPath(row.path) === folder) {
         titles.push(titleOfPath(row.path));
       }
     }
@@ -504,8 +562,8 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
       const name = (parent === "" ? folder : folder.slice(parent.length + 1)).split("/")[0];
       if ((parent ? `${parent}/${name}` : name) !== except) names.add(name);
     };
-    for (const { row } of entries.values()) if (row.notebook === notebook) consider(folderOfPath(row.path));
-    for (const row of folders.values()) if (row.notebook === notebook) consider(row.path);
+    for (const { row } of entries.values()) if (row.notebook === notebook && !row.deleted) consider(folderOfPath(row.path));
+    for (const row of folders.values()) if (row.notebook === notebook && !row.deleted) consider(row.path);
     return [...names];
   }
 
@@ -530,27 +588,78 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
     removedFolders.set(key, [notebook, path]);
   }
 
-  /** Moves the folder at `from` to `to`: every note and folder marker in it goes along, notes keeping their ids. */
-  function relocateFolder(notebook: string, from: string, to: string): string {
+  /**
+   * Moves the folder at `from` to `to`: every note and folder marker in it
+   * goes along, notes keeping their ids. Into or out of the Trash, `trashed`
+   * (when, or `""` for out) is written into every note and marker on the way.
+   */
+  function relocateFolder(notebook: string, from: string, to: string, trashed?: string): string {
     const moved: string[] = [];
     for (const [key, entry] of entries) {
       const { row } = entry;
-      if (row.notebook !== notebook || !isInFolder(row.path, from)) continue;
+      if (row.notebook !== notebook || row.deleted || !isInFolder(row.path, from)) continue;
       row.path = movedPath(row.path, from, to);
-      row.text = writeNote(row.text, { id: row.key });
+      row.text = writeNote(row.text, { id: row.key, trashed });
       row.revision++;
       if (entry.parsed.text !== row.text) entry.parsed = parse(row.text);
       moved.push(key);
     }
+    let marked = false;
     for (const row of [...folders.values()]) {
-      if (row.notebook !== notebook || !isInsideOrSelf(row.path, from)) continue;
+      if (row.notebook !== notebook || row.deleted || !isInsideOrSelf(row.path, from)) continue;
       const previous = row.path;
       row.path = movedPath(row.path, from, to);
+      if (trashed !== undefined) row.trashed = trashed || undefined;
+      if (row.path === to) marked = true;
       putFolder(row, previous);
     }
+    // Into the Trash, a folder that only its notes made gets a marker, so the Trash lists it as one thing.
+    if (trashed && !marked) putFolder({ notebook, path: to, base: null, trashed });
     folderMoves.set(notebook, [...(folderMoves.get(notebook) ?? []), { from, to }]);
     changed(moved, { edit: true, folders: true });
     return to;
+  }
+
+  /** Marks a note deleted for good: at once when the notebook never had it, otherwise until the push that removes it lands. */
+  function dropNote(key: string, entry: Entry) {
+    if (entry.row.base === null) {
+      entries.delete(key);
+      return;
+    }
+    entry.row.deleted = true;
+    entry.row.revision++;
+  }
+
+  /** Marks a folder's marker deleted for good, the same way. */
+  function dropFolderForGood(row: FolderRow) {
+    if (row.base === null) {
+      dropFolder(row.notebook, row.path);
+      return;
+    }
+    row.deleted = true;
+    putFolder(row);
+  }
+
+  /** Deletes for good every trashed note and folder that `expired` says is due; returns how many of each. */
+  function deleteTrashed(notebook: string, expired: (trashed: string) => boolean, edit: boolean) {
+    const keys: string[] = [];
+    let notes = 0;
+    let dropped = 0;
+    for (const [key, entry] of entries) {
+      const { row } = entry;
+      if (row.notebook !== notebook || row.deleted || !isTrashPath(row.path)) continue;
+      if (!expired(entry.parsed.fields.trashed ?? "")) continue;
+      dropNote(key, entry);
+      keys.push(key);
+      notes++;
+    }
+    for (const row of [...folders.values()]) {
+      if (row.notebook !== notebook || row.deleted || !isTrashPath(row.path) || !expired(row.trashed ?? "")) continue;
+      dropFolderForGood(row);
+      dropped++;
+    }
+    changed(keys, { edit: edit && (notes > 0 || dropped > 0), folders: dropped > 0 });
+    return { notes, folders: dropped };
   }
 
   function iso() {
@@ -590,13 +699,20 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
           text: row.text,
           revision: row.revision,
           base: row.base && { ...row.base },
-          dirty: isDirty(row),
+          dirty: !row.deleted && isDirty(row),
+          deleted: row.deleted === true,
         })),
 
     folders: (notebook) =>
       [...folders.values()]
         .filter((row) => row.notebook === notebook)
-        .map((row) => ({ path: row.path, base: row.base, dirty: row.base !== row.path }))
+        .map((row) => ({
+          path: row.path,
+          base: row.base,
+          dirty: !row.deleted && row.base !== row.path,
+          trashed: isTrashPath(row.path) ? (row.trashed ?? "") : null,
+          deleted: row.deleted === true,
+        }))
         .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
 
     folderMoves: (notebook) => [...(folderMoves.get(notebook) ?? [])],
@@ -608,8 +724,13 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
           continue;
         }
         const existing = folders.get(pathKey({ notebook, path: change.path }));
-        if (existing) existing.base = change.base;
-        putFolder(existing ?? { notebook, path: change.path, base: change.base });
+        if (existing) {
+          existing.base = change.base;
+          if (change.trashed !== undefined) existing.trashed = change.trashed || undefined;
+          // Changed in the notebook since it was deleted here: the notebook's version wins, and the folder is back.
+          delete existing.deleted;
+        }
+        putFolder(existing ?? { notebook, path: change.path, base: change.base, ...(change.trashed ? { trashed: change.trashed } : {}) });
       }
       for (const change of changes) {
         if ("remove" in change) {
@@ -621,6 +742,8 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
           existing.row.base = change.base;
           existing.row.path = change.device.path;
           existing.row.text = change.device.text;
+          // Changed in the notebook since it was deleted here: the notebook's version wins, and the note is back.
+          delete existing.row.deleted;
           if (existing.parsed.text !== existing.row.text) existing.parsed = parse(existing.row.text);
         } else {
           const row: NoteRow = {
@@ -641,7 +764,7 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
       );
     },
 
-    applyPush: (notebook, head, pushed, landedFolders = []) => {
+    applyPush: (notebook, head, pushed, landedFolders = [], removed = { notes: [], folders: [] }) => {
       const keys: string[] = [];
       for (const { id, base } of pushed) {
         const entry = entries.get(id);
@@ -655,11 +778,30 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
         row.base = path;
         putFolder(row);
       }
+      for (const id of removed.notes) {
+        if (entries.get(id)?.row.deleted) {
+          entries.delete(id);
+          keys.push(id);
+        }
+      }
+      for (const path of removed.folders) {
+        if (folders.get(pathKey({ notebook, path }))?.deleted) dropFolder(notebook, path);
+      }
       // The push has said what it did; the next one starts its own account.
       folderMoves.delete(notebook);
       setHead(notebook, head);
-      changed(keys, { folders: landedFolders.length > 0 });
+      changed(keys, { folders: landedFolders.length > 0 || removed.folders.length > 0 });
     },
+
+    purge: (notebook, before) =>
+      deleteTrashed(
+        notebook,
+        (trashed) => {
+          const due = purgeTime(trashed);
+          return due !== null && due <= before;
+        },
+        false,
+      ),
 
     pendingAttachments: (notebook) =>
       [...attachments.values()]
@@ -793,6 +935,63 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
       if (destination === folderOfPath(path)) return path;
       const unique = uniqueFolderName(folderName(path), destination, foldersBeside(notebook, destination));
       return relocateFolder(notebook, path, destination ? `${destination}/${unique}` : unique);
+    },
+
+    trashNote: (id) =>
+      edit(id, (row) => {
+        if (isTrashPath(row.path)) return false;
+        const folder = trashPath(folderOfPath(row.path));
+        row.path = notePath(folder, uniqueTitle(titleOfPath(row.path), titlesBeside(row.notebook, folder, id)));
+        row.text = writeNote(row.text, { id: row.key, trashed: iso() });
+        return true;
+      }),
+
+    trashFolder: (notebook, path) => {
+      if (isTrashPath(path)) return path;
+      const parent = trashPath(folderOfPath(path));
+      const unique = uniqueFolderName(folderName(path), parent, foldersBeside(notebook, parent));
+      return relocateFolder(notebook, path, `${parent}/${unique}`, iso());
+    },
+
+    restoreNote: (id) =>
+      edit(id, (row) => {
+        if (!isTrashPath(row.path)) return false;
+        const folder = folderOfPath(originalPath(row.path));
+        row.path = notePath(folder, uniqueTitle(titleOfPath(row.path), titlesBeside(row.notebook, folder, id)));
+        row.text = writeNote(row.text, { id: row.key, trashed: "" });
+        return true;
+      }),
+
+    restoreFolder: (notebook, path) => {
+      if (!isTrashPath(path)) return path;
+      const parent = folderOfPath(originalPath(path));
+      const unique = uniqueFolderName(folderName(path), parent, foldersBeside(notebook, parent));
+      return relocateFolder(notebook, path, parent ? `${parent}/${unique}` : unique, "");
+    },
+
+    deleteNoteForever: (id) => {
+      const entry = entries.get(id);
+      if (!entry || entry.row.deleted || !isTrashPath(entry.row.path)) return;
+      dropNote(id, entry);
+      changed([id], { edit: true });
+    },
+
+    deleteFolderForever: (notebook, path) => {
+      if (!isTrashPath(path)) return;
+      const keys: string[] = [];
+      for (const [key, entry] of entries) {
+        if (entry.row.notebook !== notebook || entry.row.deleted || !isInFolder(entry.row.path, path)) continue;
+        dropNote(key, entry);
+        keys.push(key);
+      }
+      for (const row of [...folders.values()]) {
+        if (row.notebook === notebook && !row.deleted && isInsideOrSelf(row.path, path)) dropFolderForGood(row);
+      }
+      changed(keys, { edit: true, folders: true });
+    },
+
+    emptyTrash: (notebook) => {
+      deleteTrashed(notebook, () => true, true);
     },
 
     addAttachment: (notebook, image) => {
@@ -937,6 +1136,7 @@ function view({ row, persisted, parsed }: Entry): Note {
     created: fields.created,
     updated: fields.updated,
     share: fields.share,
+    trashed: isTrashPath(row.path) ? (fields.trashed ?? "") : null,
     saved: persisted >= row.revision,
     synced: !isDirty(row),
   };

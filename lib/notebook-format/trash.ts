@@ -8,18 +8,19 @@ export const TRASH_DIR = ".trash";
 export const TRASH_RETENTION_DAYS = 30;
 export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
-/** Where `path` (a note's, a `.gitkeep`'s or a folder's) goes when trashed: `.trash/<path>`. */
+/** Where `path` (a note's, a `.gitkeep`'s or a folder's; `""` for the top level) goes when trashed: `.trash/<path>`. */
 export function trashPath(path: string): string {
-  return `${TRASH_DIR}/${path}`;
+  return path === "" ? TRASH_DIR : `${TRASH_DIR}/${path}`;
 }
 
-/** Whether `path` is in the Trash. */
+/** Whether `path` is in the Trash (or is the Trash itself, as the folder `""` becomes). */
 export function isTrashPath(path: string): boolean {
-  return isInFolder(path, TRASH_DIR);
+  return path === TRASH_DIR || isInFolder(path, TRASH_DIR);
 }
 
 /** `path` with `.trash/` taken off: where the item was, or where it goes back to. `path` itself when it isn't trashed. */
 export function originalPath(path: string): string {
+  if (path === TRASH_DIR) return "";
   return isTrashPath(path) ? path.slice(TRASH_DIR.length + 1) : path;
 }
 

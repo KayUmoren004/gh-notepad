@@ -126,14 +126,14 @@ describe("the ledger's side of folders", () => {
     const notebook = store.personalNotebook;
     store.createFolder(notebook, "", "Projects");
 
-    expect(store.sync.folders(notebook)).toEqual([{ path: "Projects", base: null, dirty: true }]);
+    expect(store.sync.folders(notebook)).toEqual([{ path: "Projects", base: null, dirty: true, trashed: null, deleted: false }]);
     store.sync.applyPush(notebook, "c1", [], ["Projects"]);
-    expect(store.sync.folders(notebook)).toEqual([{ path: "Projects", base: "Projects", dirty: false }]);
+    expect(store.sync.folders(notebook)).toEqual([{ path: "Projects", base: "Projects", dirty: false, trashed: null, deleted: false }]);
     expect([...store.getState().folders.values()][0]).toMatchObject({ path: "Projects", synced: true });
     await store.close();
 
     const again = await open(store.indexedDB);
-    expect(again.sync.folders(notebook)).toEqual([{ path: "Projects", base: "Projects", dirty: false }]);
+    expect(again.sync.folders(notebook)).toEqual([{ path: "Projects", base: "Projects", dirty: false, trashed: null, deleted: false }]);
     await again.close();
   });
 
@@ -144,11 +144,11 @@ describe("the ledger's side of folders", () => {
     store.sync.applyPush(notebook, "c1", [], ["Projects"]);
 
     store.renameFolder(notebook, "Projects", "Work");
-    expect(store.sync.folders(notebook)).toEqual([{ path: "Work", base: "Projects", dirty: true }]);
+    expect(store.sync.folders(notebook)).toEqual([{ path: "Work", base: "Projects", dirty: true, trashed: null, deleted: false }]);
     expect(store.sync.folderMoves(notebook)).toEqual([{ from: "Projects", to: "Work" }]);
 
     store.sync.applyPush(notebook, "c2", [], ["Work"]);
-    expect(store.sync.folders(notebook)).toEqual([{ path: "Work", base: "Work", dirty: false }]);
+    expect(store.sync.folders(notebook)).toEqual([{ path: "Work", base: "Work", dirty: false, trashed: null, deleted: false }]);
     expect(store.sync.folderMoves(notebook)).toEqual([]);
     await store.close();
   });
@@ -169,8 +169,8 @@ describe("the ledger's side of folders", () => {
       { path: "Renamed here", base: null },
     ]);
     expect(store.sync.folders(notebook)).toEqual([
-      { path: "Made here", base: null, dirty: true },
-      { path: "Renamed here", base: null, dirty: true },
+      { path: "Made here", base: null, dirty: true, trashed: null, deleted: false },
+      { path: "Renamed here", base: null, dirty: true, trashed: null, deleted: false },
     ]);
     await store.close();
   });

@@ -22,6 +22,8 @@ describe("notebook format: the Trash", () => {
     expect(trashPath("Garden/Plan.md")).toBe(".trash/Garden/Plan.md");
     expect(originalPath(".trash/Garden/Plan.md")).toBe("Garden/Plan.md");
     expect(originalPath("Garden/Plan.md")).toBe("Garden/Plan.md");
+    expect(trashPath("")).toBe(".trash");
+    expect(originalPath(".trash")).toBe("");
   });
 
   it("tells trashed notes and folder markers from notes, and from files that aren't either", () => {
