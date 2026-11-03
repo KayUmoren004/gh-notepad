@@ -28,10 +28,14 @@
   --default-transition-duration: 150ms;
   --default-transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
 
-  /* `animate-enter`: fade up into place. For screens and occasional surfaces, never for keyboard actions. */
-  --animate-enter: enter var(--duration-enter) var(--ease-out) both;
+  /*
+   * `animate-enter`: fade up into place. For screens and occasional surfaces, never for keyboard actions.
+   * The keyframes are `rise`, not `enter`: tw-animate-css's `animate-in` (popovers, dialogs) has its own
+   * `enter`, and only one of two same-named keyframes survives the build.
+   */
+  --animate-enter: rise var(--duration-enter) var(--ease-out) both;
 
-  @keyframes enter {
+  @keyframes rise {
     from {
       opacity: 0;
       transform: translateY(var(--enter-offset)) scale(var(--enter-scale));
