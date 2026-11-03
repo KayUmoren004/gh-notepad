@@ -18,6 +18,7 @@ import {
   type NoteRow,
   type NotebookRow,
 } from "./database";
+import { createVersionCache, type VersionCache } from "./version-cache";
 
 export type { AgreedVersion } from "./database";
 
@@ -157,6 +158,8 @@ export interface DeviceStore {
   attachmentSrc: (notebook: string, path: string) => string | null;
 
   readonly sync: SyncLedger;
+  /** Commit data the History panel has fetched, kept on the device for good: commits never change. */
+  readonly versions: VersionCache;
 
   /** Writes everything pending to IndexedDB now. */
   flush: () => Promise<void>;
@@ -500,6 +503,7 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
     },
 
     sync,
+    versions: createVersionCache(db),
     flush,
     close: async () => {
       await flush();
