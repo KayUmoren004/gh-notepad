@@ -3,6 +3,7 @@
 import { Extension } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extensions";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { Selection } from "@tiptap/pm/state";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { type Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { getMarkdown, mergeMarkdown, richTextExtensions } from "@/lib/rich-text";
@@ -141,7 +142,15 @@ export function RichTextMode({
   useImperativeHandle(
     ref,
     () => ({
-      focus: () => editor?.commands.focus("start"),
+      focus: () => {
+        if (!editor) return;
+        const { view } = editor;
+        // Not `commands.focus("start")`: on a desktop it focuses the DOM only in the next animation frame,
+        // so a key pressed meanwhile (Enter in the title, then the first letter of the body) still goes to
+        // what had focus before. Set the cursor and take focus now, in the same task as the key that asked.
+        view.dispatch(view.state.tr.setSelection(Selection.atStart(view.state.doc)).scrollIntoView());
+        view.focus();
+      },
       selection: () => {
         if (!editor) return null;
         const blocks = textblocks(editor.state.doc);
