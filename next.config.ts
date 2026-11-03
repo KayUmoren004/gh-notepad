@@ -1,7 +1,7 @@
+import { withSerwist } from "@serwist/turbopack";
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  /* config options here */
-};
+const nextConfig: NextConfig = {};
 
-export default nextConfig;
+// Keeps esbuild, which bundles the service worker (app/serwist/[path]/route.ts), out of the server bundle.
+export default withSerwist(nextConfig);
