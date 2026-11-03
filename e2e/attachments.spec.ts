@@ -37,6 +37,42 @@ const imagesIn = (body: Locator) => body.locator("img:not(.ProseMirror-separator
 /** The refusal shown beside the note body (Next's route announcer is an alert too). */
 const refusal = (page: Page) => page.getByRole("alert").filter({ hasText: /^Images/ });
 
+/**
+ * Resolves once a note holding `marker` is written to this device (the store's
+ * trailing write, ADR 0002), so a reload right after an edit can't outrun it.
+ */
+async function waitUntilOnDevice(page: Page, marker: string) {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async (wanted) => {
+          const names = (await indexedDB.databases()).flatMap((db) =>
+            db.name?.startsWith("gh-notepad-account-") ? [db.name] : [],
+          );
+          for (const name of names) {
+            const db = await new Promise<IDBDatabase>((resolve, reject) => {
+              const opening = indexedDB.open(name);
+              opening.onsuccess = () => resolve(opening.result);
+              opening.onerror = () => reject(opening.error);
+            });
+            try {
+              const rows = await new Promise<{ text: string }[]>((resolve, reject) => {
+                const reading = db.transaction("notes").objectStore("notes").getAll();
+                reading.onsuccess = () => resolve(reading.result as { text: string }[]);
+                reading.onerror = () => reject(reading.error);
+              });
+              if (rows.some((row) => row.text.includes(wanted))) return true;
+            } finally {
+              db.close();
+            }
+          }
+          return false;
+        }, marker),
+      { timeout: 5_000 },
+    )
+    .toBe(true);
+}
+
 /** The image in the note body, loaded: a broken or missing image has no natural width. */
 async function expectLoadedImage(body: Locator, src: RegExp): Promise<Locator> {
   const image = imagesIn(body);
@@ -69,6 +105,7 @@ test.describe("offline", () => {
     // Shown from the device's copy, before anything reaches the notebook.
     await expectLoadedImage(body, /^blob:/);
     await expect(page.getByRole("status")).toHaveText("Saved · Offline", { timeout: 20_000 });
+    await waitUntilOnDevice(page, "/attachments/");
 
     await page.reload();
     await page.getByRole("button", { name: title }).click();
@@ -82,7 +119,8 @@ test.describe("offline", () => {
     const files = await fakeGitHub.files(members.allowed, "my-notes");
     const link = /!\[\]\((\/attachments\/[0-9a-f-]{36}\.png)\)/.exec(files[`${title}.md`] ?? "")?.[1];
     expect(link).toBeDefined();
-    expect(files[`${title}.md`]).toContain(`Day one\n\n![](${link})`);
+    // Images are inline: pasted at the cursor, right after what was typed.
+    expect(files[`${title}.md`]).toContain(`Day one![](${link})`);
     expect(await fakeGitHub.fileBytes(members.allowed, "my-notes", (link as string).slice(1))).toEqual(pngBytes);
   });
 });

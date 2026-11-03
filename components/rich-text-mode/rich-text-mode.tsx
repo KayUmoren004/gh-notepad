@@ -7,7 +7,7 @@ import { type Ref, useEffect, useImperativeHandle, useRef, useState } from "reac
 import { getMarkdown, mergeMarkdown, richTextExtensions } from "@/lib/rich-text";
 import { cn } from "@/lib/utils";
 import { FormatBar, TableBar } from "./format-bar";
-import { ImageFiles, ImageHandlerSource, type ImageHandlers } from "./images";
+import { ImageFiles, ImageHandlerSource, type ImageHandlers, withImageViews } from "./images";
 import { useInputModality } from "./input-modality";
 import { MobileFormatBar } from "./mobile-format-bar";
 import { type PickImage, SlashCommand, SlashMenu, SlashMenuStore } from "./slash-menu";
@@ -87,7 +87,7 @@ export function RichTextMode({
 
   // The editor is created once, from the first value; later values are merged in.
   const [extensions] = useState(() => [
-    ...richTextExtensions({ markdown: value }),
+    ...withImageViews(richTextExtensions({ markdown: value }), imageHandlers),
     Placeholder.configure({ placeholder }),
     SlashCommand.configure({ store: slashMenu }),
     ImageFiles.configure({ handlers: imageHandlers }),

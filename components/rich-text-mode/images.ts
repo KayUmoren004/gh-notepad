@@ -1,4 +1,4 @@
-import { Extension } from "@tiptap/core";
+import { Extension, type Extensions, Node } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
@@ -32,10 +32,54 @@ export class ImageHandlerSource {
 const imageFilesKey = new PluginKey("imageFiles");
 
 /**
+ * The document's extensions with its image node drawn through `handlers`:
+ * every image is shown from the URL `imageSrc` gives for its `src`, while the
+ * note keeps the `src` as written, so an attachment's root-relative link
+ * survives untouched. A node view from the extension itself is in place for
+ * the first draw; one from a plugin would come a draw later, and the browser
+ * would have fetched the link as written by then.
+ */
+export function withImageViews(extensions: Extensions, handlers: ImageHandlerSource): Extensions {
+  return extensions.map((extension) => {
+    if (extension.name !== "image" || !(extension instanceof Node)) return extension;
+    const resolve = (src: string) => handlers.current.imageSrc?.(src) ?? src;
+    return (
+      extension
+        .extend({
+          addNodeView() {
+            return ({ node }) => {
+              const dom = document.createElement("img");
+              const render = (current: ProseMirrorNode) => {
+                const src = typeof current.attrs.src === "string" ? current.attrs.src : "";
+                const shown = resolve(src);
+                // Setting an unchanged `src` would load the image again.
+                if (dom.getAttribute("src") !== shown) dom.setAttribute("src", shown);
+                dom.alt = typeof current.attrs.alt === "string" ? current.attrs.alt : "";
+                if (typeof current.attrs.title === "string" && current.attrs.title) dom.title = current.attrs.title;
+                else dom.removeAttribute("title");
+              };
+              render(node);
+              return {
+                dom,
+                update: (next: ProseMirrorNode) => {
+                  if (next.type !== node.type) return false;
+                  render(next);
+                  return true;
+                },
+                ignoreMutation: () => true,
+              };
+            };
+          },
+        })
+        // Extending resets the options; the document's own (inline images, …) are what rich text mode needs.
+        .configure(extension.options)
+    );
+  });
+}
+
+/**
  * Images from files: pasting or dropping files inserts them as images at the
- * cursor (or where they were dropped), and every image is shown from the URL
- * `imageSrc` gives for its `src`. The note keeps the `src` as written, so an
- * attachment's root-relative link survives untouched.
+ * cursor, or where they were dropped, through `onImageFile`.
  */
 export const ImageFiles = Extension.create<{ handlers: ImageHandlerSource | null }>({
   name: "imageFiles",
@@ -48,8 +92,6 @@ export const ImageFiles = Extension.create<{ handlers: ImageHandlerSource | null
     const { handlers } = this.options;
     if (!handlers) return [];
     const { editor } = this;
-
-    const resolve = (src: string) => handlers.current.imageSrc?.(src) ?? src;
 
     /** Inserts the images for `files`, the first at `at` (or the cursor), the rest after it. */
     const insert = async (files: File[], at?: number) => {
@@ -88,30 +130,6 @@ export const ImageFiles = Extension.create<{ handlers: ImageHandlerSource | null
             event.preventDefault();
             void insert(files, view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos);
             return true;
-          },
-          nodeViews: {
-            image: (node) => {
-              const dom = document.createElement("img");
-              const render = (current: ProseMirrorNode) => {
-                const src = typeof current.attrs.src === "string" ? current.attrs.src : "";
-                const shown = resolve(src);
-                // Setting an unchanged `src` would load the image again.
-                if (dom.getAttribute("src") !== shown) dom.setAttribute("src", shown);
-                dom.alt = typeof current.attrs.alt === "string" ? current.attrs.alt : "";
-                if (typeof current.attrs.title === "string" && current.attrs.title) dom.title = current.attrs.title;
-                else dom.removeAttribute("title");
-              };
-              render(node);
-              return {
-                dom,
-                update: (next) => {
-                  if (next.type !== node.type) return false;
-                  render(next);
-                  return true;
-                },
-                ignoreMutation: () => true,
-              };
-            },
           },
         },
       }),
