@@ -1,6 +1,12 @@
 import { sealData, unsealData } from "iron-session";
 import { NextResponse, type NextRequest } from "next/server";
-import { GitHubError, gatewayFromEnv, type GitHubGateway, type OAuthGrant } from "@/lib/github-gateway";
+import {
+  GitHubError,
+  gatewayFromEnv,
+  type GitHubGateway,
+  type GitHubUser,
+  type OAuthGrant,
+} from "@/lib/github-gateway";
 import { accessList, type AccessList } from "./access";
 import { randomUrlSafe, s256, safeEqual } from "./pkce";
 import { SESSION_COOKIE, sealSession, sessionCookieOptions, unsealSession, type Session } from "./session";
@@ -120,7 +126,7 @@ export function createAuth({ appUrl, sessionSecret, access, github }: AuthOption
       }
 
       let grant: OAuthGrant;
-      let user: Awaited<ReturnType<GitHubGateway["getAuthenticatedUser"]>>;
+      let user: GitHubUser;
       try {
         // GitHub checks the PKCE verifier: a code issued to another attempt is refused.
         grant = await github.exchangeCode({ code, redirectUri: callbackUrl, codeVerifier: attempt.verifier });
