@@ -11,6 +11,7 @@ import { MarkdownDocumentExtension } from "./markdown-document-extension";
  */
 
 export { MARKDOWN_SOURCE, lowlight } from "./document-extensions";
+export { mergeMarkdown } from "./merge";
 
 /** The editor extensions for a note body, loaded from `markdown`. */
 export function richTextExtensions({ markdown }: { markdown: string }): Extensions {

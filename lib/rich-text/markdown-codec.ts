@@ -46,6 +46,17 @@ function listStyleOf(source: string): ListStyle {
   return { marker: first[3] ?? first[2], spread };
 }
 
+/**
+ * Tiptap's table Markdown without column padding, so a row's text doesn't
+ * depend on the widest cell in its column and editing a cell changes one line.
+ */
+function compactTable(markdown: string): string {
+  return markdown
+    .split("\n")
+    .map((line, index) => (index === 1 ? line.replace(/-{3,}/g, "---") : line.replace(/ {2,}(?=\|)/g, " ")))
+    .join("\n");
+}
+
 /** Tiptap's list Markdown (`-` and `1.`, tight) in the list's own style. */
 function applyListStyle(markdown: string, { marker, spread }: ListStyle): string {
   const lines: string[] = [];
@@ -152,6 +163,7 @@ export class MarkdownCodec {
       } else {
         markdown = this.manager.serialize({ type: "doc", content: [node.toJSON()] }).replace(/^\n+|\n+$/g, "");
         if (LIST_TYPES.has(node.type.name)) markdown = applyListStyle(markdown, node.attrs as ListStyle);
+        if (node.type.name === "table") markdown = compactTable(markdown);
       }
       this.canonical.set(node, markdown);
     }
