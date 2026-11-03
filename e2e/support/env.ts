@@ -33,6 +33,15 @@ export const shellMembers: Record<string, { tree: string; big: string }> = {
 };
 
 /**
+ * Allowed members whose personal notebooks the tags spec seeds with tagged
+ * notes: one per test and Playwright project, since each test changes them.
+ */
+export const tagMembers: Record<string, { field: string; filter: string; layout: string }> = {
+  desktop: { field: "octo-tags-field-desktop", filter: "octo-tags-filter-desktop", layout: "octo-tags-layout-desktop" },
+  phone: { field: "octo-tags-field-phone", filter: "octo-tags-filter-phone", layout: "octo-tags-layout-phone" },
+};
+
+/**
  * Allowed members whose personal notebooks the search specs seed, one set per
  * Playwright project: `notes` a few notes with words to find, `big` over a
  * thousand notes to type against.
@@ -74,6 +83,7 @@ export const appEnv = {
     members.allowed,
     ...Object.values(v1Members),
     ...Object.values(shellMembers).flatMap(({ tree, big }) => [tree, big]),
+    ...Object.values(tagMembers).flatMap(({ field, filter, layout }) => [field, filter, layout]),
     ...Object.values(searchMembers).flatMap(({ notes, big }) => [notes, big]),
     ...Object.values(signOutMembers).flatMap(({ first, second }) => [first, second]),
   ].join(","),

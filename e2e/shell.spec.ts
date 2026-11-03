@@ -99,8 +99,8 @@ test("on a desktop the sidebar tree sits beside the centred editor, under a top 
   expect(sidebarBox.height).toBe(900);
   await expect(sidebar.getByRole("button", { name: "New note" })).toBeVisible();
   await expect(sidebar.getByRole("button", { name: "Sign out" })).toBeVisible();
-  // Slots that later tickets fill are there, disabled.
-  for (const slot of ["Tags", "Trash"]) await expect(sidebar.getByRole("button", { name: slot })).toBeDisabled();
+  // The slot a later ticket fills is there, disabled.
+  await expect(sidebar.getByRole("button", { name: "Trash" })).toBeDisabled();
 
   // Folders first, then notes, each in alphabetical order, nested as the paths say.
   expect((await labelsOf(notebooksOf(page))).slice(0, 12)).toEqual([
