@@ -13,7 +13,7 @@ A GitHub user allowed to sign in to this deployment.
 _Avoid_: User (ambiguous), guest, account
 
 **Collaborator**:
-A member invited to a shared notebook, with either view or edit rights to it.
+A member invited to a shared notebook, who can read and edit everything in it.
 _Avoid_: Member (membership is about signing in, not about a notebook)
 
 ## Notes and their organisation

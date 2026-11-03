@@ -10,5 +10,6 @@ The app keeps no database of its own. Who may sign in is the owner's `ALLOWED_GI
 ## Consequences
 
 - Sharing with edit rights is per notebook, never per note.
+- GitHub gives every collaborator on a personal-account repository write access, so shared notebooks offer edit access only; read-only sharing is done with share links.
 - Adding someone to `ALLOWED_GITHUB_USERS` takes a redeploy; inviting them to a shared notebook does not.
-- A share link must be a published copy of the note, because the app cannot read a private notebook without a signed-in member.
+- A share link must be a published copy of the note (a snapshot under an unguessable id in Vercel Blob), because the app cannot read a private notebook without a signed-in member.
