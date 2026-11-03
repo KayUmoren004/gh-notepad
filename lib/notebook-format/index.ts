@@ -19,3 +19,4 @@ export {
   uniqueTitle,
   UNTITLED,
 } from "./paths";
+export { isV1Path, migrateV1, type TextFile, type V1Migration } from "./v1-migration";

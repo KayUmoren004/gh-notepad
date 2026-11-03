@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { Account } from "@/lib/device-store";
 import { cn } from "@/lib/utils";
+import { MigrationNotice } from "./migration-notice";
 import { NoteEditor } from "./note-editor";
 import { NoteList } from "./note-list";
 import { NotepadProvider, useNotepad, useNotes } from "./notepad-provider";
@@ -57,6 +58,7 @@ function Notes() {
             New note
           </Button>
         </div>
+        <MigrationNotice className="mx-3 mb-2" />
         <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <NoteList notes={notes} openId={open?.id ?? null} onOpen={show} />
         </nav>
