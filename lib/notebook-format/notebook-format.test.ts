@@ -70,6 +70,7 @@ describe("notebook format: reading a note", () => {
       created: "2026-11-03T12:00:00.000Z",
       updated: "2026-11-03T12:30:00.000Z",
       share: null,
+      trashed: null,
       body: "# Groceries\n\n- Milk\n- Bread\n",
     });
   });
@@ -81,6 +82,7 @@ describe("notebook format: reading a note", () => {
       created: null,
       updated: null,
       share: null,
+      trashed: null,
       body: "# Written on github.com\n\nNo metadata here.\n",
     });
   });

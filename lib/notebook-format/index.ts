@@ -4,11 +4,13 @@
  *
  * - A note is `<folder path>/<title>.md`: Markdown with optional YAML
  *   frontmatter holding `id`, `tags`, `created`, `updated` and, while the
- *   note has a share link, `share`.
+ *   note has a share link, `share`; while it is in the Trash, `trashed`.
  * - Reading and writing never disturb what they don't change: an unchanged
  *   note serialises to the original bytes.
  * - A folder is a directory; one that holds no notes is kept by a `.gitkeep`
  *   (`folders.ts`). Folder names follow the rules of titles.
+ * - The Trash is `.trash/`, mirroring original paths (`trash.ts`): a trashed
+ *   note records when in `trashed`, a trashed folder in its `.gitkeep`.
  */
 export {
   FOLDER_KEEP,
@@ -34,4 +36,15 @@ export {
   uniqueTitle,
   UNTITLED,
 } from "./paths";
+export {
+  folderOfTrashedKeepPath,
+  isTrashPath,
+  isTrashedNotePath,
+  originalPath,
+  purgeTime,
+  trashPath,
+  TRASH_DIR,
+  TRASH_RETENTION_DAYS,
+  TRASH_RETENTION_MS,
+} from "./trash";
 export { isV1Path, migrateV1, type TextFile, type V1Migration } from "./v1-migration";

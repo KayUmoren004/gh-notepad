@@ -10,6 +10,8 @@ export interface NoteFields {
   updated: string | null;
   /** The note's share link id while it is shared (ticket #14), or `null`. */
   share: string | null;
+  /** When the note was moved to the Trash (ISO 8601), while it is there; `null` otherwise. */
+  trashed: string | null;
   /** Everything after the frontmatter, exactly as it is in the file. */
   body: string;
 }
@@ -17,14 +19,15 @@ export interface NoteFields {
 /**
  * Changes to apply to a note file. A field left out, or given as `null`, keeps
  * whatever the file has; a field equal to what the file has changes nothing.
- * An empty `share` removes the key: a note is either shared or it isn't.
+ * An empty `share` or `trashed` removes the key: a note is either shared or it
+ * isn't, in the Trash or not.
  */
 export type NoteChanges = { [Field in keyof NoteFields]?: NoteFields[Field] | null };
 
 type MetaField = Exclude<keyof NoteFields, "body">;
 
 /** The order the app writes its own keys in when a file has none. */
-const META_FIELDS: readonly MetaField[] = ["id", "tags", "created", "updated", "share"];
+const META_FIELDS: readonly MetaField[] = ["id", "tags", "created", "updated", "share", "trashed"];
 
 interface Parts {
   /** A byte order mark, kept as found. */
@@ -91,7 +94,7 @@ function scalarText(node: unknown): string | null {
   return null;
 }
 
-const NO_META = (): Omit<NoteFields, "body"> => ({ id: null, tags: [], created: null, updated: null, share: null });
+const NO_META = (): Omit<NoteFields, "body"> => ({ id: null, tags: [], created: null, updated: null, share: null, trashed: null });
 
 function readMeta({ doc, editable }: Frontmatter): Omit<NoteFields, "body"> {
   const meta: Omit<NoteFields, "body"> = NO_META();
@@ -99,6 +102,7 @@ function readMeta({ doc, editable }: Frontmatter): Omit<NoteFields, "body"> {
 
   meta.id = scalarText(doc.get("id", true));
   meta.share = scalarText(doc.get("share", true));
+  meta.trashed = scalarText(doc.get("trashed", true));
   meta.created = scalarText(doc.get("created", true));
   meta.updated = scalarText(doc.get("updated", true));
   const tags = doc.get("tags", true);
@@ -207,8 +211,8 @@ export function writeNote(text: string, changes: NoteChanges): string {
   for (const field of META_FIELDS) {
     const value = changes[field];
     if (value === undefined || value === null) continue;
-    // An empty tag list and no `tags` key mean the same thing; so do an empty share id and no `share` key.
-    if (value === "" && field === "share") {
+    // An empty tag list and no `tags` key mean the same thing; so do an empty share id and no `share` key, an empty `trashed` likewise.
+    if (value === "" && (field === "share" || field === "trashed")) {
       if (hasKey(frontmatter, field)) metaChanges[field] = value;
       continue;
     }
