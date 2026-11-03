@@ -13,14 +13,24 @@ interface Indication {
   tone: "quiet" | "busy" | "warning";
 }
 
+const numbers = new Intl.NumberFormat();
+
 /** Saved (on this device) and Synced (matches GitHub) are separate states, shown separately (ADR 0002). */
 function indicate(note: Note, saving: boolean, status: SyncStatus): Indication {
   if (saving) return { label: "Saving…", detail: "Saving on this device", tone: "busy" };
   if (note.synced) return { label: "Synced", detail: "Saved on this device and synced to GitHub", tone: "quiet" };
   const saved = "Saved on this device";
   switch (status.state) {
-    case "syncing":
-      return { label: "Saved · Syncing…", detail: `${saved}; syncing to GitHub`, tone: "busy" };
+    case "syncing": {
+      // A sync of more than one commit says how far it has come: "Syncing 2 of 3…".
+      const { progress } = status;
+      const part = progress ? ` ${numbers.format(progress.done + 1)} of ${numbers.format(progress.total)}` : "";
+      return {
+        label: `Saved · Syncing${part}…`,
+        detail: `${saved}; syncing to GitHub${part && `, part${part}`}`,
+        tone: "busy",
+      };
+    }
     case "offline":
       return { label: "Saved · Offline", detail: `${saved}; syncs when you're back online`, tone: "quiet" };
     case "signed-out":

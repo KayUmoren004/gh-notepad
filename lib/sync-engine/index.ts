@@ -7,7 +7,11 @@
  *   matched by frontmatter `id`, falling back to path.
  * - Push: one atomic commit holding every unsynced note, with a readable
  *   message, on top of the head this device last saw; if another device got
- *   there first, pull and retry.
+ *   there first, pull and retry. More changes than a commit can carry go as
+ *   the fewest commits that keep each note's changes together (a rename's new
+ *   and old file, a converted v1 note and the v1 file it replaces), numbered
+ *   `(1 of 3)`, with progress in the status; a failure part-way leaves what
+ *   landed, and the next sync carries on from there.
  * - Typing during a sync is never overwritten: a push only marks a note synced
  *   if its text is still the text that was pushed.
  * - A note changed on both sides is merged three ways, line by line; where
