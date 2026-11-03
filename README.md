@@ -16,6 +16,7 @@ An invite-only, local-first notepad: notes are Markdown files in GitHub reposito
 | `SESSION_SECRET` | At least 32 random characters; encrypts the session cookie. Changing it signs everyone out. |
 | `OWNER_GITHUB_USER` | The owner's GitHub login; always allowed to sign in. Anyone the owner invites to one of their notebooks may sign in too, and their invitation is accepted as they do. |
 | `ALLOWED_GITHUB_USERS` | Other logins allowed to sign in, comma-separated (case-insensitive). |
+| `NEXT_PUBLIC_ATTACHMENT_LIMIT_BYTES` | Optional: the largest image a note may attach, in bytes (see [Known limits](#known-limits)). Default 4 MB (`4194304`); never over 10 MB. Set at build time, since the browser reads it too. |
 | `GITHUB_API_BASE_URL`, `GITHUB_OAUTH_BASE_URL` | Test-only: point the GitHub gateway at the fake GitHub. Leave unset in production. |
 
 ## Development
@@ -43,3 +44,7 @@ npm run test:e2e   # Playwright: builds the app and starts it next to the fake G
 ```
 
 CI runs all four on every push (`.github/workflows/ci.yml`). Locally, Playwright reuses an app or fake GitHub already listening on ports 3100 and 4010; stop them to test a fresh build.
+
+## Known limits
+
+- **Images up to 4 MB each.** An attachment reaches GitHub in one request to the app, and serverless hosting caps a request body (Vercel at about 4.5 MB), so the app refuses larger images where they are pasted, dropped or picked, with "Images must be under 4 MB", and stores nothing. The limit is `NEXT_PUBLIC_ATTACHMENT_LIMIT_BYTES`, read by the device's check and by the attachments route alike, and never more than the 10 MB cap in [ADR 0003](docs/adr/0003-attachments-live-in-the-notebook.md). Should a deployment still refuse an image a device already holds (a limit lowered after the app was loaded), the note syncs without it and the sidebar lists the image with a Remove button; sync never retries it.

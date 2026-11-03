@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, use, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
-import { openDeviceStore, type Account, type DeviceStore, type Note } from "@/lib/device-store";
+import { openDeviceStore, type Account, type DeviceStore, type FailedAttachment, type Note } from "@/lib/device-store";
 import { buildNotebookTrees, recentNotes, type NotebookTree } from "@/lib/notebook-tree";
 import { createRemote } from "@/lib/remote";
 import { createSyncEngine, type SyncEngine, type SyncStatus } from "@/lib/sync-engine";
@@ -134,6 +134,13 @@ export function useTagIndex(): TagIndex {
 export function useNote(id: string): Note | undefined {
   const { store } = useNotepad();
   const read = () => store.note(id);
+  return useSyncExternalStore(store.subscribe, read, read);
+}
+
+/** Attachments on this device that the notebook refused, oldest first; re-rendering only when they change. */
+export function useFailedAttachments(): readonly FailedAttachment[] {
+  const { store } = useNotepad();
+  const read = () => store.getState().failedAttachments;
   return useSyncExternalStore(store.subscribe, read, read);
 }
 
