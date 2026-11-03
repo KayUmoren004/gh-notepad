@@ -10,7 +10,14 @@ import {
   type NotebookLocation,
   type RepositoryName,
 } from "@/lib/github-gateway";
-import { ATTACHMENTS_DIR, attachmentContentType, imageProblem, isAttachmentPath } from "@/lib/attachments";
+import {
+  ATTACHMENTS_DIR,
+  attachmentContentType,
+  attachmentLimitBytes,
+  imageProblem,
+  isAttachmentPath,
+  sizeLimitMessage,
+} from "@/lib/attachments";
 import { isSafePath } from "@/lib/notebook-format";
 import {
   BLOBS_PER_REQUEST,
@@ -37,6 +44,7 @@ import {
  *   POST /api/notebooks/:owner/:repo/blobs           { shas }         text of blobs
  *   POST /api/notebooks/:owner/:repo/commits         { branch, base, message, changes }
  *   POST /api/notebooks/:owner/:repo/attachments     <image bytes>    stored as a blob, for a commit to name
+ *                                                    (413 `too_large` past the deployment's attachment limit)
  *   GET  /api/notebooks/:owner/:repo/attachments/:name ?branch=&sha=  the attachment's bytes, cacheable
  */
 export interface NotebookApi {
@@ -47,6 +55,8 @@ export interface NotebookApiOptions {
   appUrl: URL;
   readSession: (cookies: CookieReader) => Promise<Session | null>;
   github: GitHubGateway;
+  /** The largest attachment the route stores; the deployment's limit (`attachmentLimitBytes`) by default. */
+  attachmentLimitBytes?: number;
 }
 
 /** The notebook routes configured from the environment, like `authFromEnv`. */
@@ -58,6 +68,7 @@ export function notebookApiFromEnv(
     appUrl: new URL(env.NEXT_PUBLIC_APP_URL ?? ""),
     readSession: authFromEnv(env, dependencies).readSession,
     github: gatewayFromEnv(env, dependencies),
+    attachmentLimitBytes: attachmentLimitBytes(env),
   });
 }
 
@@ -128,7 +139,15 @@ function readChanges(value: unknown): FileChange[] {
   });
 }
 
-export function createNotebookApi({ appUrl, readSession, github }: NotebookApiOptions): NotebookApi {
+export function createNotebookApi({
+  appUrl,
+  readSession,
+  github,
+  attachmentLimitBytes: attachmentLimit = attachmentLimitBytes({}),
+}: NotebookApiOptions): NotebookApi {
+  /** Past the deployment's limit: the device is told so for good, not asked to try again. */
+  const tooLarge = () => new ApiFailure(413, "too_large", sizeLimitMessage(attachmentLimit));
+
   /** The member and their GitHub, or a 401 when the session is missing or expired. */
   async function signedIn(request: NextRequest): Promise<{ session: Session; gitHub: MemberGitHub }> {
     const session = await readSession(request.cookies);
@@ -190,10 +209,13 @@ export function createNotebookApi({ appUrl, readSession, github }: NotebookApiOp
       const notebook = notebookOf(session, owner, repo);
       const type = request.headers.get("content-type")?.split(";")[0].trim() ?? "";
       const declared = Number(request.headers.get("content-length"));
-      const problem = imageProblem({ type, size: Number.isFinite(declared) && declared > 0 ? declared : 1 });
+      const size = Number.isFinite(declared) && declared > 0 ? declared : 1;
+      if (size > attachmentLimit) throw tooLarge();
+      const problem = imageProblem({ type, size }, attachmentLimit);
       if (problem) throw invalid(problem);
       const bytes = new Uint8Array(await request.arrayBuffer());
-      const late = imageProblem({ type, size: bytes.length });
+      if (bytes.length > attachmentLimit) throw tooLarge();
+      const late = imageProblem({ type, size: bytes.length }, attachmentLimit);
       if (late) throw invalid(late);
       const stored: AttachmentBlobResponse = { sha: await gitHub.storeBlob(notebook, bytes) };
       return reply(stored, 201);

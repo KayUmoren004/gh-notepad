@@ -69,6 +69,8 @@ export type ApiErrorCode =
   | "forbidden"
   | "not_found"
   | "invalid"
+  /** The body is over what this deployment stores (an attachment past its size limit); sending it again won't help. */
+  | "too_large"
   | "branch_moved"
   | "rate_limited"
   | "github_unavailable";

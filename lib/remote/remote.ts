@@ -17,9 +17,12 @@ import {
  * - `offline`: the app's server couldn't be reached; try again on reconnect.
  * - `signed-out`: the session ended or GitHub revoked the token; sign in again.
  * - `rate-limited`: GitHub asked us to wait `retryAfterMs`.
+ * - `refused`: the deployment turned the request's content away for good (an
+ *   attachment over its size limit, whether the route or the hosting said
+ *   so); sending the same thing again won't help.
  * - `failed`: anything else; retry with back-off.
  */
-export type RemoteErrorKind = "offline" | "signed-out" | "rate-limited" | "failed";
+export type RemoteErrorKind = "offline" | "signed-out" | "rate-limited" | "refused" | "failed";
 
 export class RemoteError extends Error {
   constructor(
@@ -151,7 +154,11 @@ async function failure(response: Response): Promise<Error> {
       return new RemoteError("signed-out", message);
     case "rate_limited":
       return new RemoteError("rate-limited", message, (body.retryAfter ?? 60) * 1000);
+    case "too_large":
+      return new RemoteError("refused", message);
     default:
+      // Hosting that caps request bodies answers 413 itself, before the route runs, with no body of ours.
+      if (response.status === 413) return new RemoteError("refused", body.message ?? "The image is too big to store");
       return new RemoteError(response.status === 401 ? "signed-out" : "failed", message);
   }
 }

@@ -63,7 +63,13 @@ export interface World {
   ) => Promise<Response>;
 }
 
-export function createWorld({ members = ["octo-member"] }: { members?: string[] } = {}): World {
+export interface WorldOptions {
+  members?: string[];
+  /** Environment variables for the app's routes, over the world's own (a deployment's attachment limit, say). */
+  env?: Record<string, string>;
+}
+
+export function createWorld({ members = ["octo-member"], env: overrides = {} }: WorldOptions = {}): World {
   const github = createFakeGitHub();
   const app = github.addOAuthApp({ callbackUrl: `${appUrl}/api/auth/callback` });
   for (const login of members) github.addUser({ login });
@@ -87,6 +93,7 @@ export function createWorld({ members = ["octo-member"] }: { members?: string[] 
     GITHUB_CLIENT_SECRET: app.clientSecret,
     OWNER_GITHUB_USER: members[0],
     ALLOWED_GITHUB_USERS: members.join(","),
+    ...overrides,
   };
   const auth = authFromEnv(env, { fetch: toGitHub });
   const api = notebookApiFromEnv(env, { fetch: toGitHub });

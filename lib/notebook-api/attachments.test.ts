@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ATTACHMENT_LIMIT_BYTES } from "@/lib/attachments";
 import { createWorld, type Device, type World } from "@/test/devices";
 
 const member = "octo-member";
@@ -56,13 +57,26 @@ describe("the attachments routes", () => {
     const before = world.github.requests().length;
 
     const text = await storeBytes(world, new TextEncoder().encode("hello"), { type: "text/plain", as: laptop });
-    const huge = await storeBytes(world, new Uint8Array(10 * 1024 * 1024 + 1), { as: laptop });
+    const huge = await storeBytes(world, new Uint8Array(ATTACHMENT_LIMIT_BYTES + 1), { as: laptop });
 
     expect(text.status).toBe(400);
     expect(await text.json()).toMatchObject({ error: "invalid", message: "Images only (JPEG, PNG, GIF, WebP, SVG)" });
-    expect(huge.status).toBe(400);
-    expect(await huge.json()).toMatchObject({ error: "invalid", message: "Images must be under 10 MB" });
+    expect(huge.status).toBe(413);
+    expect(await huge.json()).toMatchObject({ error: "too_large", message: "Images must be under 4 MB" });
     expect(world.github.requests().slice(before)).toEqual([]);
+  });
+
+  it("hold what the deployment's own limit allows, and nothing over it", async () => {
+    const world = createWorld({ env: { NEXT_PUBLIC_ATTACHMENT_LIMIT_BYTES: "1024" } });
+    const laptop = await world.signIn(member);
+    await laptop.sync();
+
+    const over = await storeBytes(world, new Uint8Array(1025), { as: laptop });
+    const at = await storeBytes(world, new Uint8Array(1024), { as: laptop });
+
+    expect(over.status).toBe(413);
+    expect(await over.json()).toMatchObject({ error: "too_large", message: "Images must be under 1 kB" });
+    expect(at.status).toBe(201);
   });
 
   it("store bytes as a blob that a commit then names, byte for byte", async () => {
