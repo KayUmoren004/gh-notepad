@@ -73,11 +73,12 @@ async function openTreeNotebook(page: Page, signInAs: (login: string) => Promise
   await expect(notebooksOf(page).getByRole("button", { name: "Projects", exact: true })).toBeVisible();
 }
 
-/** The rows' names as assistive technology reads them, top to bottom (the rows' "Actions" buttons aside). */
+/** The tree rows' names as assistive technology reads them, top to bottom (the rows' menu buttons aside). */
 async function labelsOf(region: Locator): Promise<string[]> {
-  return [...(await region.ariaSnapshot()).matchAll(/button "((?:[^"\\]|\\.)*)"/g)]
+  const tree = await region.getByRole("list").first().ariaSnapshot();
+  return [...tree.matchAll(/button "((?:[^"\\]|\\.)*)"/g)]
     .map((match) => match[1])
-    .filter((label) => label !== "Actions");
+    .filter((label) => label !== "Actions" && !label.startsWith("Options for "));
 }
 
 test("on a desktop the sidebar tree sits beside the centred editor, under a top bar with a breadcrumb", async ({
@@ -348,7 +349,7 @@ test("a notebook with over a thousand notes and the worst titles stays readable 
   await signInAs(login);
   await expect(page).toHaveURL("/notes");
 
-  const notebook = notebooksOf(page).getByRole("button", { name: "my-notes" });
+  const notebook = notebooksOf(page).getByRole("button", { name: "my-notes", exact: true });
   await expect(notebook).toHaveAttribute("title", /^my-notes: 1,00\d notes$/, { timeout: 60_000 });
   const notes = notesOf(page);
   const sidebarWidth = (await sidebarOf(page).boundingBox())!.width;

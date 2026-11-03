@@ -31,11 +31,12 @@ const actionsOf = (page: Page, name: string) =>
     .locator("[data-tree-row]", { has: page.getByRole("button", { name, exact: true }) })
     .getByRole("button", { name: "Actions" });
 
-/** The rows' names as assistive technology reads them, top to bottom (the rows' "Actions" buttons aside). */
+/** The tree rows' names as assistive technology reads them, top to bottom (the rows' menu buttons aside). */
 async function labelsOf(region: Locator): Promise<string[]> {
-  return [...(await region.ariaSnapshot()).matchAll(/button "((?:[^"\\]|\\.)*)"/g)]
+  const tree = await region.getByRole("list").first().ariaSnapshot();
+  return [...tree.matchAll(/button "((?:[^"\\]|\\.)*)"/g)]
     .map((match) => match[1])
-    .filter((label) => label !== "Actions");
+    .filter((label) => label !== "Actions" && !label.startsWith("Options for "));
 }
 
 /** Waits for the notebook on GitHub to hold exactly these paths (README aside), as sync lands each move. */
@@ -128,10 +129,11 @@ test("on desktop, folders are made nested, a note is dragged into one, and it al
 
   // A folder can't go into its own descendant: the drop is refused, with the reason, and nothing moves.
   await dragRow(page, rowOf(page, "Garden"), rowOf(page, "Beds"));
-  await expect(page.getByText("A folder can't go inside itself")).toBeVisible();
+  // Said twice: in the ghost by the pointer, and in the live region for assistive technology.
+  await expect(page.getByText("A folder can't go inside itself")).toHaveCount(2);
   await page.screenshot({ path: testInfo.outputPath("desktop-refused-drop.png") });
   await page.mouse.up();
-  await expect(page.getByText("A folder can't go inside itself")).toBeHidden();
+  await expect(page.getByText("A folder can't go inside itself")).toHaveCount(0);
   expect((await labelsOf(notebooksOf(page))).slice(3, 6)).toEqual(["Garden", "Beds", "Groceries"]);
 
   // Renamed in place: everything under the folder moves with it.
