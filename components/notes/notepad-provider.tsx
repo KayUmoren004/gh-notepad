@@ -11,6 +11,7 @@ import { filterByTags, indexTags, type TagIndex } from "@/lib/tags";
 export interface Notepad {
   store: DeviceStore;
   engine: SyncEngine;
+  /** For calls that aren't part of sync: a note's history, and shared notebooks' collaborators and invitations. */
   remote: Remote;
 }
 

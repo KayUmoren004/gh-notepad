@@ -99,10 +99,11 @@ export const fakeOnlyRoutes: FakeRoute[] = [
       if (!repo) return apiError(404, "Not Found");
       const body = await readObject(request);
       const files = fileMap(body.files, true);
-      if (typeof body.message !== "string" || !files) {
-        return apiError(422, "Validation Failed: message and files ({ path: content | null }) are required");
+      const date = typeof body.date === "string" && !Number.isNaN(Date.parse(body.date)) ? body.date : undefined;
+      if (typeof body.message !== "string" || !files || (body.date !== undefined && !date)) {
+        return apiError(422, "Validation Failed: message and files ({ path: content | null }) are required; date is ISO 8601");
       }
-      return json({ sha: commitFiles(state, repo, { message: body.message, files }) }, { status: 201 });
+      return json({ sha: commitFiles(state, repo, { message: body.message, files, date }) }, { status: 201 });
     },
   },
   {

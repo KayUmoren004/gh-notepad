@@ -38,7 +38,7 @@ Drive the parts a person does on github.com with the fake's methods, and observe
 Notebooks and Git data:
 
 - `addRepo({ owner, name, private?, files?, topics?, collaborators? })` seeds a repository (private by default) with an initial commit holding `files`, or empty without them; its `collaborators` have already accepted.
-- `commitFiles(owner, name, { message, files })` plays an edit made outside the app (on github.com, another editor): one commit on the default branch, where a `null` content deletes the path.
+- `commitFiles(owner, name, { message, files, date? })` plays an edit made outside the app (on github.com, another editor): one commit on the default branch, where a `null` content deletes the path; `date` (ISO 8601) backdates it, to seed a note's history across editing sessions.
 - `files(owner, name)` reads every file on the default branch as text, and `fileBytes(owner, name, path)` one file as bytes (an attachment); `commits(owner, name)` lists its history, newest first, with the paths each commit `added`, `modified` or `removed`; `repo(owner, name)` returns the repository record.
 - `invite(owner, name, invitee)` plays the owner inviting someone to collaborate; `collaborators(owner, name)` and `invitations(owner, name)` show who has access and who is still invited.
 - `requests()` lists every GitHub request answered (`{ method, path, status }`, control routes aside), e.g. to show an unchanged notebook costs one `304`, or that a route refused a bad name before asking GitHub.
@@ -72,7 +72,9 @@ To develop against the fake instead of a real OAuth App, run `npm run fake-githu
 | `GET /user` | The token's user, with `X-OAuth-Scopes`; 401 `Bad credentials` for a missing token too. |
 | `GET /repos/:owner/:repo` | The repository, with the caller's own `permissions`; 404 for a private one they neither own nor collaborate on. |
 | `POST /user/repos` | Creates a repository for the token's user; `auto_init` adds an initial commit with `README.md`. 422 `name already exists on this account` when taken. |
-| `GET /repos/:owner/:repo/commits/:ref` | With `Accept: application/vnd.github.sha`: just the SHA, `ETag: "<sha>"`, and `304` when `If-None-Match` names it. 409 on an empty repository. |
+| `GET /repos/:owner/:repo/commits` | The first-parent history from `sha` (a branch or commit; the default branch otherwise), newest first, paged; with `path=`, only the commits that added, changed or removed that path (like `git log -- path`, so a rename shows under both names but isn't followed). 404 for an unknown `sha`, 409 on an empty repository. |
+| `GET /repos/:owner/:repo/commits/:ref` | With `Accept: application/vnd.github.sha`: just the SHA, `ETag: "<sha>"`, and `304` when `If-None-Match` names it. Otherwise the commit with its `stats` and `files[]` (`status`, `additions`, `deletions`, and `previous_filename` for a `renamed` file: a removed and an added file with the same blob, or whose lines are at least half alike, as git pairs them; no `patch`). 409 on an empty repository. |
+| `GET /repos/:owner/:repo/contents/*` | A file at `ref` (a branch or commit; the default branch otherwise): base64 JSON, or the bytes with `Accept: application/vnd.github.raw+json`; a directory lists its entries. 404 where the ref has nothing. |
 | `GET /repos/:owner/:repo/git/ref/heads/:branch`, `PATCH …/git/refs/heads/:branch` | Read and move a branch. Without `force`, a commit that doesn't descend from the branch gets 422 `Update is not a fast forward`. |
 | `GET`/`POST /repos/:owner/:repo/git/blobs` | Blobs as base64 wrapped at 60 characters; create from `utf-8` or `base64`. |
 | `GET`/`POST /repos/:owner/:repo/git/trees` | `GET` takes a tree SHA, commit SHA or branch name, with `?recursive=1`. `POST` takes `base_tree` and entries with `content`, `sha`, or `sha: null` to delete (422 for a path the base doesn't have); empty directories vanish. |
@@ -93,7 +95,7 @@ To develop against the fake instead of a real OAuth App, run `npm run fake-githu
 | `POST /_fake/users` | Seeds a user: `{ login, name? }`. |
 | `GET /_fake/users/:login/tokens` | Access tokens issued to `login`. |
 | `POST /_fake/repos` | Seeds a repository: `{ owner, name, private?, files?, topics?, collaborators? }` (idempotent). |
-| `POST /_fake/repos/:owner/:repo/commits` | An outside edit: `{ message, files }`, `null` deleting a path. |
+| `POST /_fake/repos/:owner/:repo/commits` | An outside edit: `{ message, files, date? }`, `null` deleting a path; `date` (ISO 8601) backdates the commit, for history made in the past. |
 | `GET /_fake/repos/:owner/:repo/files` | Every file on the default branch, as text, by path. |
 | `GET /_fake/repos/:owner/:repo/file/*` | One file on the default branch as bytes (`application/octet-stream`), for attachments; 404 if there is none. |
 | `POST /_fake/repos/:owner/:repo/invitations` | The owner invites `{ invitee }`: `{ id }` of the open invitation, or `{ id: null }` once they collaborate. |

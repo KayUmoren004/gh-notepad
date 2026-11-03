@@ -15,11 +15,11 @@ export interface FakeGitHubControl {
    * and `collaborators` (idempotent: an existing one is left as it is).
    */
   addRepo: (repo: RepoSeed) => Promise<{ full_name: string }>;
-  /** Plays an edit made outside the app: commits `files` (`null` deletes) to the default branch. */
+  /** Plays an edit made outside the app: commits `files` (`null` deletes) to the default branch, dated `date` (ISO 8601) or now. */
   commitFiles: (
     owner: string,
     name: string,
-    change: { message: string; files: Record<string, string | null> },
+    change: { message: string; files: Record<string, string | null>; date?: string },
   ) => Promise<{ sha: string }>;
   /** Every file on the default branch, as text, by path. */
   files: (owner: string, name: string) => Promise<Record<string, string>>;

@@ -5,11 +5,14 @@ import {
   type AttachmentBlobResponse,
   type BlobsResponse,
   type CommitResponse,
+  type FileAtResponse,
   type FileChange,
   type FilesResponse,
   type HeadResponse,
   type NotebookRef,
   type RemoteFile,
+  type RemoteVersion,
+  type VersionsResponse,
 } from "./contract";
 // Type-only: the shared-notebook routes' reply shapes, erased at build time, so nothing server-only is loaded.
 import type {
@@ -89,6 +92,11 @@ export interface Remote {
   /** Open invitations addressed to the member. */
   myInvitations: () => Promise<NotebookInvitation[]>;
   acceptInvitation: (invitationId: number) => Promise<void>;
+
+  /** Every version of the file at `path` on the branch, newest first, followed back through renames and moves. */
+  versions: (notebook: NotebookRef, path: string) => Promise<RemoteVersion[]>;
+  /** The file's text at `commit`, or `null` if that commit has no file at `path`. */
+  fileAt: (notebook: NotebookRef, commit: string, path: string) => Promise<string | null>;
 }
 
 export interface RemoteOptions {
@@ -201,10 +209,27 @@ export function createRemote({ baseUrl = "", fetch: send = (...args) => fetch(..
     myInvitations: async () => (await call<InvitationsResponse>(routes.invitations)).invitations,
 
     acceptInvitation: (invitationId) => call<void>(`${routes.invitations}/${invitationId}/accept`, { method: "POST" }),
+
+    versions: async (notebook, path) =>
+      (
+        await call<VersionsResponse>(
+          `${routes.notebook(notebook)}/versions?${new URLSearchParams({ branch: notebook.branch, path })}`,
+        )
+      ).versions,
+
+    fileAt: async (notebook, commit, path) => {
+      try {
+        return (await call<FileAtResponse>(`${routes.notebook(notebook)}/file?${new URLSearchParams({ commit, path })}`)).text;
+      } catch (error) {
+        if (error instanceof NotFound) return null;
+        throw error;
+      }
+    },
   };
 }
 
 class BranchMoved extends Error {}
+class NotFound extends Error {}
 
 async function failure(response: Response): Promise<Error> {
   const body = (await response.json().catch(() => ({}))) as Partial<ApiErrorBody> & { error?: string };
@@ -212,6 +237,8 @@ async function failure(response: Response): Promise<Error> {
   switch (body.error) {
     case "branch_moved":
       return new BranchMoved(message);
+    case "not_found":
+      return new NotFound(message);
     case "signed_out":
       return new RemoteError("signed-out", message);
     case "rate_limited":
