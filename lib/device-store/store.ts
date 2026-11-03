@@ -16,6 +16,7 @@ import {
   writeNote,
   type NoteFields,
 } from "@/lib/notebook-format";
+import { canonicalTags, indexTags } from "@/lib/tags";
 import {
   NotepadDatabase,
   type AgreedVersion,
@@ -201,6 +202,12 @@ export interface DeviceStore {
   editBody: (id: string, body: string) => void;
   /** Renames a note: the title is sanitised and de-duplicated, and becomes its file name. */
   rename: (id: string, title: string) => void;
+  /**
+   * Replaces a note's tags, as typed: cleaned (`cleanTags`), each one taking
+   * the casing it already has elsewhere on the device, written into the note's
+   * frontmatter, so sync pushes it like any other edit.
+   */
+  setTags: (id: string, tags: readonly string[]) => void;
   /** Moves a note into `folder` (`""` for the top level), de-duplicating its title there; returns nothing if it is there already. */
   moveNote: (id: string, folder: string) => void;
 
@@ -651,6 +658,16 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
         row.path = path;
         // Only the file name changes (a pure rename in git), unless the file still needs its id.
         row.text = writeNote(row.text, { id: row.key });
+        return true;
+      }),
+
+    setTags: (id, tags) =>
+      edit(id, (row, fields) => {
+        const index = indexTags([...state.notes.values()]);
+        const next = canonicalTags(tags, index);
+        if (next.length === fields.tags.length && next.every((tag, i) => tag === fields.tags[i])) return false;
+        // The first save of a file written elsewhere gives it frontmatter with this note's id.
+        row.text = writeNote(row.text, { tags: next, id: row.key, updated: iso() });
         return true;
       }),
 
