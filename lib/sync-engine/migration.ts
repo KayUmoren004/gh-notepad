@@ -64,7 +64,8 @@ export function planMigration(
 function commitMessage(skipped: readonly SkippedFile[]): string {
   let message = "Convert v1 notes to Markdown";
   if (skipped.length === 0) return message;
-  message += `\n\nLeft out ${skipped.length === 1 ? "1 file" : `${skipped.length} files`} that couldn't be read; this notebook's history keeps them:`;
+  const files = skipped.length === 1 ? "1 file" : `${skipped.length} files`;
+  message += `\n\nLeft out ${files} that couldn't be read; this notebook's history keeps them:`;
   for (const [index, { path, reason }] of skipped.entries()) {
     const line = `\n- ${path}: ${reason}`;
     const rest = `\n- and ${skipped.length - index} more`;

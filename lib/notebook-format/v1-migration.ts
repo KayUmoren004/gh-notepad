@@ -100,7 +100,9 @@ export function migrateV1(files: readonly TextFile[], existing: readonly TextFil
   const notes: V1Migration["notes"] = [];
   for (const note of readable) {
     const { fields } = note;
-    const id = [text(fields.id), note.fileId].find((candidate) => candidate && !claimed.has(candidate)) ?? fallbackNoteId("", note.path);
+    const id =
+      [text(fields.id), note.fileId].find((candidate) => candidate && !claimed.has(candidate)) ??
+      fallbackNoteId("", note.path);
     claimed.add(id);
     if (converted.has(id)) continue;
 

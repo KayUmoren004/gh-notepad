@@ -191,7 +191,8 @@ export function createSyncEngine({
     const records = store.sync.records(id);
     const ids = { fallback: (path: string) => fallbackNoteId(id, path), random: () => crypto.randomUUID() };
     const changes = reconcile(records, notes, ids);
-    const migration = v1.length > 0 ? planMigration(head.commit, v1.map(withText), { records, pulled: changes, remote: notes }) : null;
+    const migration =
+      v1.length > 0 ? planMigration(head.commit, v1.map(withText), { records, pulled: changes, remote: notes }) : null;
     if (migration) migrations.set(id, migration);
     else migrations.delete(id);
     // Until the conversion is committed this head counts as unseen, so a reload before then converts again.

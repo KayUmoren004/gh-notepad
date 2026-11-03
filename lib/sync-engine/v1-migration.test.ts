@@ -208,4 +208,22 @@ describe("migrating v1 notes", () => {
       skipped: [{ path: "notes/broken.json", reason: "isn't valid JSON" }],
     });
   });
+
+  it("still commits when more files are unreadable than a commit message can list", async () => {
+    const world = createWorld();
+    const broken = Object.fromEntries(
+      Array.from({ length: 40 }, (_, index) => [`notes/${String(index).padStart(2, "0")}-${"x".repeat(30)}.json`, "{"]),
+    );
+    world.github.addRepo({ owner: member, name: notebook, files: { ...v1Notebook, ...broken } });
+    const laptop = await world.signIn(member);
+
+    await laptop.sync();
+
+    expect(world.github.files(member, notebook)).toEqual(v2Notebook);
+    const [latest] = world.github.commits(member, notebook);
+    expect(latest.message.length).toBeLessThanOrEqual(1000);
+    expect(latest.message).toMatch(/^Convert v1 notes to Markdown\n\nLeft out 40 files .*\n- notes\/00-x+\.json: isn't valid JSON\n/);
+    expect(latest.message).toMatch(/\n- and \d+ more$/);
+    expect(laptop.engine.getMigrationReport()?.skipped).toHaveLength(40);
+  });
 });
