@@ -11,6 +11,8 @@ import {
   type HeadResponse,
   type NotebookRef,
   type RemoteFile,
+  type RevokeShareResponse,
+  type ShareResponse,
   type RemoteVersion,
   type VersionsResponse,
 } from "./contract";
@@ -76,6 +78,10 @@ export interface Remote {
   ) => Promise<CommitResult>;
   /** Stores an attachment's bytes on GitHub as a blob, to name in a later commit; returns its SHA. */
   storeAttachment: (notebook: NotebookRef, attachment: { type: string; bytes: Blob }) => Promise<string>;
+  /** Publishes, or republishes, the share link copy of the note at `path` as it stands at the notebook's head. */
+  publishShare: (notebook: NotebookRef, path: string) => Promise<ShareResponse>;
+  /** Removes the published copy under share id `id`. */
+  revokeShare: (notebook: NotebookRef, id: string) => Promise<void>;
 
   /** Every notebook the member owns or collaborates on (the personal notebook among them once it exists). */
   listNotebooks: () => Promise<RemoteNotebook[]>;
@@ -186,6 +192,16 @@ export function createRemote({ baseUrl = "", fetch: send = (...args) => fetch(..
           bytes: { type, blob: bytes },
         })
       ).sha,
+
+    publishShare: (notebook, path) =>
+      call<ShareResponse>(`${routes.notebook(notebook)}/share`, {
+        method: "POST",
+        body: { branch: notebook.branch, path },
+      }),
+
+    revokeShare: async (notebook, id) => {
+      await call<RevokeShareResponse>(`${routes.notebook(notebook)}/share`, { method: "DELETE", body: { id } });
+    },
 
     listNotebooks: async () => (await call<NotebooksResponse>(routes.notebooks)).notebooks,
 

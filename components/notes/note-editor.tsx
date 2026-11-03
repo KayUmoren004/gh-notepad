@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Keyboar
 import { HistoryButton, HistoryPanel, useHistoryPanel } from "@/components/history";
 import { usePaletteAction } from "@/components/palette";
 import { RichTextMode, type RichTextModeHandle } from "@/components/rich-text-mode";
+import { ShareButton } from "@/components/share";
 import { TopBar } from "@/components/shell";
 import { ModeToggle, SourceMode } from "@/components/source-mode";
 import { breadcrumbOf } from "@/lib/notebook-tree";
@@ -134,6 +135,7 @@ export function NoteEditor({
         <div data-slot="note-actions" className="flex items-center gap-0.5">
           <ModeToggle mode={mode} onChange={switchMode} />
           <HistoryButton open={history.open} onToggle={() => history.toggle()} />
+          <ShareButton noteId={noteId} />
           <MoreMenu note={note} onRename={() => (title.current?.focus(), title.current?.select())} />
         </div>
       </TopBar>

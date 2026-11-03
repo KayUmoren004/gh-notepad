@@ -19,7 +19,9 @@ import {
   isAttachmentPath,
   sizeLimitMessage,
 } from "@/lib/attachments";
-import { isSafePath } from "@/lib/notebook-format";
+import { isNotePath, isSafePath } from "@/lib/notebook-format";
+import { isShareId, publishShare, revokeShare, shareUrl } from "@/lib/share";
+import { shareStoreFromEnv, type ShareStore } from "@/lib/share-store";
 import {
   BLOBS_PER_REQUEST,
   type ApiErrorBody,
@@ -32,6 +34,8 @@ import {
   type FilesResponse,
   type HeadResponse,
   type NotebookRef,
+  type RevokeShareResponse,
+  type ShareResponse,
   type VersionsResponse,
 } from "@/lib/remote";
 
@@ -51,6 +55,8 @@ import {
  *   GET  /api/notebooks/:owner/:repo/attachments/:name ?branch=&sha=  the attachment's bytes, cacheable
  *   GET  /api/notebooks/:owner/:repo/versions        ?branch=&path=   a note's versions, renames followed
  *   GET  /api/notebooks/:owner/:repo/file            ?commit=&path=   a note's text at a commit
+ *   POST /api/notebooks/:owner/:repo/share           { branch, path }  publishes the note's share link copy: { id, url }
+ *   DELETE /api/notebooks/:owner/:repo/share         { id }            revokes a share link
  */
 export interface NotebookApi {
   handle: (request: NextRequest) => Promise<Response>;
@@ -62,18 +68,21 @@ export interface NotebookApiOptions {
   github: GitHubGateway;
   /** The largest attachment the route stores; the deployment's limit (`attachmentLimitBytes`) by default. */
   attachmentLimitBytes?: number;
+  /** Where share links' published copies go; the store the environment calls for by default. */
+  shareStore?: ShareStore;
 }
 
 /** The notebook routes configured from the environment, like `authFromEnv`. */
 export function notebookApiFromEnv(
   env: Record<string, string | undefined> = process.env,
-  dependencies: { fetch?: typeof fetch } = {},
+  dependencies: { fetch?: typeof fetch; shareStore?: ShareStore } = {},
 ): NotebookApi {
   return createNotebookApi({
     appUrl: new URL(env.NEXT_PUBLIC_APP_URL ?? ""),
     readSession: authFromEnv(env, dependencies).readSession,
     github: gatewayFromEnv(env, dependencies),
     attachmentLimitBytes: attachmentLimitBytes(env),
+    shareStore: dependencies.shareStore ?? shareStoreFromEnv(env),
   });
 }
 
@@ -149,6 +158,7 @@ export function createNotebookApi({
   readSession,
   github,
   attachmentLimitBytes: attachmentLimit = attachmentLimitBytes({}),
+  shareStore = shareStoreFromEnv(),
 }: NotebookApiOptions): NotebookApi {
   /** Past the deployment's limit: the device is told so for good, not asked to try again. */
   const tooLarge = () => new ApiFailure(413, "too_large", sizeLimitMessage(attachmentLimit));
@@ -210,7 +220,7 @@ export function createNotebookApi({
       .filter(Boolean)
       .map((segment) => decodeURIComponent(segment));
 
-    if (request.method === "POST") {
+    if (request.method !== "GET") {
       // A cross-site page can't read these routes' answers, but it mustn't write either.
       const origin = request.headers.get("origin");
       if (origin !== null && origin !== appUrl.origin) throw new ApiFailure(403, "forbidden", "Cross-site request");
@@ -310,7 +320,43 @@ export function createNotebookApi({
       return reply(created, 201);
     }
 
+    if (action === "share" && request.method === "POST") {
+      const body = await jsonBody(request);
+      const notebook = await branchOf(member, owner, repo, body.branch);
+      const path = typeof body.path === "string" ? body.path : "";
+      if (!isSafePath(path) || !isNotePath(path)) throw invalid("Not a note");
+      const outcome = await inShareStore(() => publishShare({ gitHub, notebook, path, store: shareStore }));
+      if (outcome.status === "no-such-note") throw new ApiFailure(404, "not_found", "The notebook has no such note");
+      if (outcome.status === "not-shared") throw invalid("The note isn't shared");
+      if (outcome.status === "taken") throw new ApiFailure(403, "forbidden", "That share link belongs to another notebook");
+      const published: ShareResponse = { id: outcome.id, url: shareUrl(appUrl, outcome.id) };
+      return reply(published, 201);
+    }
+
+    if (action === "share" && request.method === "DELETE") {
+      const body = await jsonBody(request);
+      const notebook = await notebookOf(member, owner, repo);
+      const id = typeof body.id === "string" ? body.id : "";
+      if (!isShareId(id)) throw invalid("Invalid share id");
+      const outcome = await inShareStore(() => revokeShare({ notebook, id, store: shareStore }));
+      if (outcome.status === "taken") throw new ApiFailure(403, "forbidden", "That share link belongs to another notebook");
+      const revoked: RevokeShareResponse = { id };
+      return reply(revoked);
+    }
+
     throw new ApiFailure(404, "not_found", "No such route");
+  }
+
+  /** A share store that can't be reached is reported as such, not as a crash; the device retries with its next sync. */
+  async function inShareStore<T>(action: () => Promise<T>): Promise<T> {
+    try {
+      return await action();
+    } catch (error) {
+      if (error instanceof GitHubError) throw error;
+      // Logged without anything from the note.
+      console.error(`Share store request failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw new ApiFailure(502, "share_store_unavailable", "The share link couldn't be updated; it will be retried");
+    }
   }
 
   /**

@@ -32,6 +32,10 @@ export type {
   HeadResponse,
   NotebookRef,
   RemoteFile,
+  RevokeShareRequest,
+  RevokeShareResponse,
+  ShareRequest,
+  ShareResponse,
   RemoteVersion,
   VersionsResponse,
 } from "./contract";

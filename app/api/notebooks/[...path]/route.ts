@@ -10,3 +10,7 @@ export function GET(request: NextRequest) {
 export function POST(request: NextRequest) {
   return notebookApiFromEnv().handle(request);
 }
+
+export function DELETE(request: NextRequest) {
+  return notebookApiFromEnv().handle(request);
+}

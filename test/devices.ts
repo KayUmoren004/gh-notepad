@@ -4,6 +4,7 @@ import { authFromEnv } from "@/lib/auth";
 import { openDeviceStore, type DeviceStore } from "@/lib/device-store";
 import { notebookApiFromEnv } from "@/lib/notebook-api";
 import { createRemote } from "@/lib/remote";
+import { createMemoryShareStore, type ShareStore } from "@/lib/share-store";
 import { sharedNotebooksApiFromEnv } from "@/lib/shared-notebooks-api";
 import { createSyncEngine, type SyncEngine, type SyncEngineOptions } from "@/lib/sync-engine";
 import { CookieJar } from "./cookie-jar";
@@ -54,6 +55,8 @@ export interface SignInOptions
 
 export interface World {
   github: FakeGitHub;
+  /** Where share links' published copies go: a memory store per world, to inspect. */
+  shareStore: ShareStore;
   /** Signs a member in on a new device, or on the browser `sameBrowserAs` runs in. */
   signIn: (login: string, options?: SignInOptions) => Promise<Device>;
   /** Holds the next request to GitHub that matches, to act while it is in flight. */
@@ -69,9 +72,15 @@ export interface WorldOptions {
   members?: string[];
   /** Environment variables for the app's routes, over the world's own (a deployment's attachment limit, say). */
   env?: Record<string, string>;
+  /** The share store the routes publish to; a fresh memory store by default. */
+  shareStore?: ShareStore;
 }
 
-export function createWorld({ members = ["octo-member"], env: overrides = {} }: WorldOptions = {}): World {
+export function createWorld({
+  members = ["octo-member"],
+  env: overrides = {},
+  shareStore = createMemoryShareStore(),
+}: WorldOptions = {}): World {
   const github = createFakeGitHub();
   const app = github.addOAuthApp({ callbackUrl: `${appUrl}/api/auth/callback` });
   for (const login of members) github.addUser({ login });
@@ -98,7 +107,7 @@ export function createWorld({ members = ["octo-member"], env: overrides = {} }: 
     ...overrides,
   };
   const auth = authFromEnv(env, { fetch: toGitHub });
-  const notebookApi = notebookApiFromEnv(env, { fetch: toGitHub });
+  const notebookApi = notebookApiFromEnv(env, { fetch: toGitHub, shareStore });
   const sharedNotebooksApi = sharedNotebooksApiFromEnv(env, { fetch: toGitHub });
   /** Routes a request the way `app/api/` does: shared-notebook routes to their API, every other notebook route to the notebook API. */
   const api = {
@@ -159,6 +168,7 @@ export function createWorld({ members = ["octo-member"], env: overrides = {} }: 
 
   return {
     github,
+    shareStore,
 
     signIn: async (login, { sameBrowserAs, ...options } = {}) => {
       const jar = new CookieJar();

@@ -64,6 +64,28 @@ export interface CommitResponse {
   blobs: Record<string, string>;
 }
 
+/** `POST …/share`: publishes the share link copy of the note at `path`, which carries the share id. */
+export interface ShareRequest {
+  branch: string;
+  path: string;
+}
+
+export interface ShareResponse {
+  /** The share id, as the note's frontmatter has it. */
+  id: string;
+  /** The public link. */
+  url: string;
+}
+
+/** `DELETE …/share`: removes the published copy under `id`. */
+export interface RevokeShareRequest {
+  id: string;
+}
+
+export interface RevokeShareResponse {
+  id: string;
+}
+
 /** One commit that touched a note's file, wherever the file was at the time. */
 export interface RemoteVersion {
   commit: string;
@@ -95,7 +117,8 @@ export type ApiErrorCode =
   | "too_large"
   | "branch_moved"
   | "rate_limited"
-  | "github_unavailable";
+  | "github_unavailable"
+  | "share_store_unavailable";
 
 export interface ApiErrorBody {
   error: ApiErrorCode;
