@@ -3,6 +3,7 @@
 import { FolderPlus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useNotepad } from "@/components/notes/notepad-provider";
+import { usePaletteAction } from "@/components/palette";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -81,13 +82,15 @@ export function NewFolderDialog({ place, onClose, onCreated }: NewFolderDialogPr
   );
 }
 
-/** The sidebar's "New folder": a folder at the top level of the personal notebook. */
+/** The sidebar's "New folder": a folder at the top level of the personal notebook, from the button or the command palette. */
 export function NewFolderAction() {
   const { store } = useNotepad();
   const [place, setPlace] = useState<FolderPlace | null>(null);
+  const start = () => setPlace({ notebook: store.personalNotebook, parent: "" });
+  usePaletteAction({ id: "new-folder", label: "New folder", keywords: "create directory organise", icon: FolderPlus, run: start });
   return (
     <>
-      <SidebarAction icon={FolderPlus} onClick={() => setPlace({ notebook: store.personalNotebook, parent: "" })}>
+      <SidebarAction icon={FolderPlus} onClick={start}>
         New folder
       </SidebarAction>
       <NewFolderDialog place={place} onClose={() => setPlace(null)} />

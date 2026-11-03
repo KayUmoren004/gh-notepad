@@ -73,9 +73,11 @@ async function openTreeNotebook(page: Page, signInAs: (login: string) => Promise
   await expect(notebooksOf(page).getByRole("button", { name: "Projects", exact: true })).toBeVisible();
 }
 
-/** The rows' names as assistive technology reads them, top to bottom. */
+/** The rows' names as assistive technology reads them, top to bottom (the hovered row's "Actions for …" aside). */
 async function labelsOf(region: Locator): Promise<string[]> {
-  return [...(await region.ariaSnapshot()).matchAll(/button "((?:[^"\\]|\\.)*)"/g)].map((match) => match[1]);
+  return [...(await region.ariaSnapshot()).matchAll(/button "((?:[^"\\]|\\.)*)"/g)]
+    .map((match) => match[1])
+    .filter((label) => !label.startsWith("Actions for "));
 }
 
 test("on a desktop the sidebar tree sits beside the centred editor, under a top bar with a breadcrumb", async ({

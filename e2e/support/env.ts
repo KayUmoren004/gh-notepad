@@ -56,6 +56,12 @@ export const searchMembers: Record<string, { notes: string; big: string }> = {
  * flows, so their notebooks are theirs alone. Neither login starts with the
  * other's: the fake's account chooser is searched by name.
  */
+/** Allowed members whose personal notebooks the folder specs reorganise, one per Playwright project. */
+export const folderMembers: Record<string, string> = {
+  desktop: "octo-folders-desktop",
+  phone: "octo-folders-phone",
+};
+
 export const signOutMembers: Record<string, { first: string; second: string }> = {
   desktop: { first: "octo-signout-one-desktop", second: "octo-signout-two-desktop" },
   phone: { first: "octo-signout-one-phone", second: "octo-signout-two-phone" },
@@ -85,6 +91,7 @@ export const appEnv = {
     ...Object.values(shellMembers).flatMap(({ tree, big }) => [tree, big]),
     ...Object.values(tagMembers).flatMap(({ field, filter, layout }) => [field, filter, layout]),
     ...Object.values(searchMembers).flatMap(({ notes, big }) => [notes, big]),
+    ...Object.values(folderMembers),
     ...Object.values(signOutMembers).flatMap(({ first, second }) => [first, second]),
   ].join(","),
   GITHUB_API_BASE_URL: fakeGitHubUrl,
