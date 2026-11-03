@@ -30,8 +30,9 @@ export function MigrationNotice({ className }: { className?: string }) {
             {count === 1 ? "1 old note couldn't be converted" : `${count} old notes couldn't be converted`}
           </h2>
           <p className="text-muted-foreground">
-            Everything else from the previous version is now in your notes. These files couldn&apos;t be read, so
-            they were left out; your notebook&apos;s history on GitHub keeps them.
+            {count === 1
+              ? "Its file couldn't be read. It's still in your notebook's history on GitHub."
+              : "Their files couldn't be read. They're still in your notebook's history on GitHub."}
           </p>
         </div>
         <Button variant="ghost" size="icon-sm" aria-label="Dismiss" onClick={() => setDismissed(report.commit)}>
@@ -52,7 +53,7 @@ export function MigrationNotice({ className }: { className?: string }) {
         rel="noreferrer"
         className="mt-2 inline-block text-xs text-foreground underline underline-offset-4"
       >
-        See them on GitHub
+        {count === 1 ? "See it on GitHub" : "See them on GitHub"}
       </a>
     </section>
   );
