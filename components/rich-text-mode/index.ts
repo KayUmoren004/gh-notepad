@@ -1,5 +1,6 @@
 export {
   RichTextMode,
+  type ImageHandlers,
   type PickedImage,
   type PickImage,
   type RichTextModeHandle,
