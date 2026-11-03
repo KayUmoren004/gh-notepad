@@ -32,9 +32,10 @@ Drive the parts a person does on github.com with the fake's methods, and observe
 
 - `authorize(authorizeUrl, { login })` approves the app as `login` and returns the URL GitHub redirects to (`code` and `state`); `authorize(url, "deny")` cancels.
 - `accessTokensFor(login)` lists the tokens issued, e.g. to show a forged callback never reached the token exchange.
-- `createFakeGitHub({ now })` takes a clock for code and token expiry.
+- `createFakeGitHub({ now })` takes a clock for code, token and invitation expiry.
+- `addRepo({ owner, name, topics, collaborators, files })` seeds a repository whose collaborators have already accepted; `invite(owner, name, invitee)` plays the owner inviting someone; `collaborators(owner, name)` and `invitations(owner, name)` show who has access and who is still invited.
 
-`lib/auth/sign-in.test.ts` is the worked example.
+`lib/auth/sign-in.test.ts` is the worked example; `lib/github-gateway/shared-notebooks.test.ts` covers collaborators and invitations.
 
 ## Over HTTP (Playwright, local development)
 
@@ -59,10 +60,23 @@ To develop against the fake instead of a real OAuth App, run `npm run fake-githu
 | `POST /login/oauth/authorize` | The chooser's form: redirects with `code` and `state`, or `error=access_denied`. |
 | `POST /login/oauth/access_token` | Form or JSON body; JSON reply when `Accept: application/json`, form-encoded otherwise. GitHub's error bodies with HTTP 200: `incorrect_client_credentials`, `redirect_uri_mismatch`, `bad_verification_code` (unknown, expired, reused, or wrong PKCE verifier). Codes are single-use and last 10 minutes. `gho_` tokens by default; `ghu_` (8 h) plus `ghr_` refresh tokens when the app has `expiringTokens` or the request asks for `offline_access`. |
 | `GET /user` | The token's user, with `X-OAuth-Scopes`; 401 `Bad credentials` for a missing, unknown or expired token. |
+| `GET /users/:username` | A user's public profile; 404 for an unknown login. |
+| `GET /user/repos` | Repositories the token's user owns or collaborates on (`affiliation`, `visibility`; `type` with either is a 422), by full name, with `topics` and the caller's own `permissions`. |
+| `GET`, `PUT /repos/:owner/:repo/topics` | `{ names }`. `PUT` replaces them, saved lowercase; owner only (403 for collaborators); 422 for a topic GitHub refuses. |
+| `GET /repos/:owner/:repo/collaborators` | The owner (`role_name: admin`) and every collaborator (`write`), for anyone who can push. `GET …/:username` answers 204 or 404. |
+| `PUT /repos/:owner/:repo/collaborators/:username` | Owner only (403 otherwise): 201 with a new invitation (or the open one again), 204 if they already collaborate, 404 for an unknown login, 422 for the owner. |
+| `DELETE /repos/:owner/:repo/collaborators/:username` | The owner removes anyone; a collaborator only themselves (leaving); 403 otherwise. |
+| `GET /repos/:owner/:repo/invitations`, `DELETE …/:id` | Owner only: the open invitations, and cancelling one. |
+| `GET /user/repository_invitations` | The token's user's open invitations, `expired` after 7 days. As on GitHub, the nested `repository` is the minimal one, without `topics`. |
+| `PATCH`, `DELETE /user/repository_invitations/:id` | Accepts (the invitee becomes a collaborator) or declines; 404 for someone else's invitation and, an assumption GitHub doesn't document, for accepting an expired one. |
+| lists | Paged like GitHub: `per_page` (default 30, at most 100) and `page`, with a `Link` header (`prev`, `next`, `last`, `first`). |
 | anything else | 404 with GitHub's `{ message: "Not Found" }` body. |
 | `GET /_fake/health` | Readiness probe for Playwright. |
 | `POST /_fake/users` | Seeds a user: `{ login, name? }`. |
 | `GET /_fake/users/:login/tokens` | Access tokens issued to `login`. |
+| `POST /_fake/repos` | Seeds a repository: `{ owner, name, private?, topics?, collaborators?, files? }`; one that exists is left as it is. |
+| `POST /_fake/repos/:owner/:repo/invitations` | The owner invites `{ invitee }`: `{ id }` of the open invitation, or `{ id: null }` once they collaborate. |
+| `GET /_fake/repos/:owner/:repo/collaborators` | Collaborators' logins, the owner aside. |
 | `GET /_fake/avatars/:login` | The SVG that `avatar_url` points at, so runs never reach the internet. |
 
 ## Adding an endpoint

@@ -14,7 +14,7 @@ An invite-only, local-first notepad: notes are Markdown files in GitHub reposito
 | `NEXT_PUBLIC_APP_URL` | The app's public origin, e.g. `https://notes.example.com` (`http://localhost:3000` in development). Cookies are `Secure` when it is `https`. |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | The OAuth App's credentials. |
 | `SESSION_SECRET` | At least 32 random characters; encrypts the session cookie. Changing it signs everyone out. |
-| `OWNER_GITHUB_USER` | The owner's GitHub login; always allowed to sign in. |
+| `OWNER_GITHUB_USER` | The owner's GitHub login; always allowed to sign in. Anyone the owner invites to one of their notebooks may sign in too, and their invitation is accepted as they do. |
 | `ALLOWED_GITHUB_USERS` | Other logins allowed to sign in, comma-separated (case-insensitive). |
 | `GITHUB_API_BASE_URL`, `GITHUB_OAUTH_BASE_URL` | Test-only: point the GitHub gateway at the fake GitHub. Leave unset in production. |
 

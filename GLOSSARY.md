@@ -88,6 +88,10 @@ _Avoid_: Duplicate, backup
 
 ## Sharing
 
+**Invitation**:
+GitHub's offer to a GitHub user to become a collaborator on a shared notebook, pending until they accept it; it expires after 7 days.
+_Avoid_: Invite (as a noun), request
+
 **Share link**:
 A read-only public URL for one note that anyone holding it can view without signing in.
 _Avoid_: Public note, published note
