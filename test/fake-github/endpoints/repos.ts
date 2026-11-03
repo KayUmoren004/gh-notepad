@@ -1,5 +1,5 @@
 import { getObject } from "../git";
-import { apiError, json, type FakeRoute, type RouteContext } from "../router";
+import { apiError, json, paginate, type FakeRoute, type RouteContext } from "../router";
 import {
   addRepo,
   authenticate,
@@ -9,8 +9,11 @@ import {
   commitFiles,
   findRepo,
   findUser,
+  isAdmin,
+  isCollaborator,
   type FakeRepo,
   type FakeState,
+  type FakeUser,
 } from "../state";
 
 /**
@@ -19,8 +22,11 @@ import {
  * (https://docs.github.com/en/rest/commits/commits#get-a-commit).
  */
 
-export function repoJson(state: FakeState, repo: FakeRepo, apiOrigin: string) {
+/** A repository as `viewer` sees it (its owner, by default): `permissions` are theirs. */
+export function repoJson(state: FakeState, repo: FakeRepo, apiOrigin: string, viewer?: FakeUser | null) {
   const owner = findUser(state, repo.owner);
+  const admin = viewer === undefined || isAdmin(viewer, repo);
+  const push = admin || canWrite(viewer ?? null, repo);
   return {
     id: repo.id,
     node_id: repo.nodeId,
@@ -36,8 +42,25 @@ export function repoJson(state: FakeState, repo: FakeRepo, apiOrigin: string) {
     created_at: repo.createdAt,
     updated_at: repo.createdAt,
     default_branch: repo.defaultBranch,
-    topics: [],
-    permissions: { admin: true, maintain: true, push: true, triage: true, pull: true },
+    topics: [...repo.topics],
+    permissions: { admin, maintain: admin, push, triage: push, pull: true },
+  };
+}
+
+/** The minimal repository GitHub nests in invitations: no topics, no permissions. */
+export function minimalRepoJson(state: FakeState, repo: FakeRepo, apiOrigin: string) {
+  const owner = findUser(state, repo.owner);
+  return {
+    id: repo.id,
+    node_id: repo.nodeId,
+    name: repo.name,
+    full_name: `${repo.owner}/${repo.name}`,
+    owner: { login: repo.owner, id: owner?.id ?? 0, type: "User", site_admin: false },
+    private: repo.private,
+    html_url: `${apiOrigin}/${repo.owner}/${repo.name}`,
+    description: repo.description,
+    fork: false,
+    url: `${apiOrigin}/repos/${repo.owner}/${repo.name}`,
   };
 }
 
@@ -65,6 +88,12 @@ export function resolveCommit(repo: FakeRepo, ref: string): string | undefined {
 }
 
 const REPO_NAME = /^[A-Za-z0-9._-]{1,100}$/;
+/** GitHub's topic rule: lowercase letters, numbers and hyphens, starting with a letter or number, at most 50 characters. */
+const TOPIC = /^[a-z0-9][a-z0-9-]{0,49}$/;
+const MAX_TOPICS = 20;
+const AFFILIATIONS = ["owner", "collaborator", "organization_member"];
+
+const adminRequired = () => apiError(403, "Must have admin rights to Repository.");
 
 export const repoRoutes: FakeRoute[] = [
   {
@@ -72,7 +101,9 @@ export const repoRoutes: FakeRoute[] = [
     path: "/repos/:owner/:repo",
     handle: (context) => {
       const access = accessRepo(context, "read");
-      return "response" in access ? access.response : json(repoJson(context.state, access.repo, context.url.origin));
+      if ("response" in access) return access.response;
+      const viewer = authenticate(context.state, context.request);
+      return json(repoJson(context.state, access.repo, context.url.origin, viewer));
     },
   },
   {
@@ -138,6 +169,64 @@ export const repoRoutes: FakeRoute[] = [
         },
         { headers: { etag } },
       );
+    },
+  },
+  {
+    method: "GET",
+    path: "/user/repos",
+    handle: ({ request, url, state }) => {
+      const user = authenticate(state, request);
+      if (!user) return apiError(401, "Requires authentication");
+      const affiliation = url.searchParams.get("affiliation");
+      if (url.searchParams.has("type") && (affiliation !== null || url.searchParams.has("visibility"))) {
+        return apiError(422, "Validation Failed");
+      }
+      const wanted = (affiliation ?? AFFILIATIONS.join(",")).split(",").map((value) => value.trim());
+      if (!wanted.every((value) => AFFILIATIONS.includes(value))) return apiError(422, "Validation Failed");
+      const visibility = url.searchParams.get("visibility") ?? "all";
+
+      // Organizations aren't modelled, so `organization_member` adds nothing.
+      const repos = [...state.repos.values()]
+        .filter(
+          (repo) =>
+            (wanted.includes("owner") && isAdmin(user, repo)) ||
+            (wanted.includes("collaborator") && isCollaborator(repo, user.login)),
+        )
+        .filter((repo) => visibility === "all" || (visibility === "private") === repo.private)
+        .sort((a, b) => `${a.owner}/${a.name}`.toLowerCase().localeCompare(`${b.owner}/${b.name}`.toLowerCase()));
+      const page = paginate(repos, url);
+      return json(
+        page.items.map((repo) => repoJson(state, repo, url.origin, user)),
+        { headers: page.headers },
+      );
+    },
+  },
+  {
+    method: "GET",
+    path: "/repos/:owner/:repo/topics",
+    handle: (context) => {
+      const access = accessRepo(context, "read");
+      return "response" in access ? access.response : json({ names: [...access.repo.topics] });
+    },
+  },
+  {
+    method: "PUT",
+    path: "/repos/:owner/:repo/topics",
+    handle: async (context) => {
+      const access = accessRepo(context, "read");
+      if ("response" in access) return access.response;
+      if (!isAdmin(authenticate(context.state, context.request), access.repo)) return adminRequired();
+      const body: unknown = await context.request.json().catch(() => null);
+      const given = body && typeof body === "object" ? (body as Record<string, unknown>).names : undefined;
+      if (!Array.isArray(given) || !given.every((name) => typeof name === "string")) {
+        return apiError(422, "Invalid request.\n\n\"names\" wasn't supplied.");
+      }
+      const topics = [...new Set(given.map((name: string) => name.trim().toLowerCase()))];
+      if (topics.length > MAX_TOPICS || !topics.every((topic) => TOPIC.test(topic))) {
+        return apiError(422, "Validation Failed");
+      }
+      access.repo.topics = topics;
+      return json({ names: [...topics] });
     },
   },
 ];

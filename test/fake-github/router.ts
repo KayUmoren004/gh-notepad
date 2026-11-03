@@ -64,3 +64,34 @@ export function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+/**
+ * GitHub's pagination: `per_page` (default 30, at most 100) and `page` (from
+ * 1) choose a slice, and a `Link` header points at the other pages in the
+ * order GitHub sends them: prev, next, last, first.
+ */
+export function paginate<T>(items: readonly T[], url: URL): { items: T[]; headers: Headers } {
+  const perPage = Math.min(100, positive(url.searchParams.get("per_page")) ?? 30);
+  const page = positive(url.searchParams.get("page")) ?? 1;
+  const lastPage = Math.max(1, Math.ceil(items.length / perPage));
+
+  const link = (target: number, rel: string) => {
+    const linked = new URL(url);
+    linked.searchParams.set("page", String(target));
+    return `<${linked}>; rel="${rel}"`;
+  };
+  const links = [
+    ...(page > 1 ? [link(Math.min(page - 1, lastPage), "prev")] : []),
+    ...(page < lastPage ? [link(page + 1, "next"), link(lastPage, "last")] : []),
+    ...(page > 1 ? [link(1, "first")] : []),
+  ];
+
+  const headers = new Headers();
+  if (links.length > 0) headers.set("link", links.join(", "));
+  return { items: items.slice((page - 1) * perPage, page * perPage), headers };
+}
+
+function positive(value: string | null): number | undefined {
+  const number = Number(value);
+  return value !== null && Number.isInteger(number) && number > 0 ? number : undefined;
+}

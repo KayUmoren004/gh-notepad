@@ -1,5 +1,7 @@
+import { collaboratorRoutes } from "./endpoints/collaborators";
 import { fakeOnlyRoutes } from "./endpoints/fake-only";
 import { gitDataRoutes } from "./endpoints/git-data";
+import { invitationRoutes } from "./endpoints/invitations";
 import { oauthRoutes } from "./endpoints/oauth";
 import { repoRoutes } from "./endpoints/repos";
 import { userRoutes } from "./endpoints/users";
@@ -13,9 +15,13 @@ import {
   commitLog,
   createState,
   findRepo,
+  findUser,
+  invitationsTo,
+  inviteCollaborator,
   issueAccessToken,
   readFiles,
   type FakeCommitSummary,
+  type FakeInvitation,
   type FakeOAuthApp,
   type FakeRepo,
   type FakeRequest,
@@ -26,7 +32,15 @@ import {
 } from "./state";
 
 /** Every endpoint the fake answers. Add new endpoint modules here. */
-const routes: FakeRoute[] = [...oauthRoutes, ...userRoutes, ...repoRoutes, ...gitDataRoutes, ...fakeOnlyRoutes];
+const routes: FakeRoute[] = [
+  ...oauthRoutes,
+  ...userRoutes,
+  ...repoRoutes,
+  ...gitDataRoutes,
+  ...collaboratorRoutes,
+  ...invitationRoutes,
+  ...fakeOnlyRoutes,
+];
 
 export interface FakeGitHubOptions {
   /** Clock for token and code expiry, in epoch milliseconds. */
@@ -78,6 +92,16 @@ export interface FakeGitHub {
   commits: (owner: string, name: string) => FakeCommitSummary[];
   /** Every GitHub request answered so far (control routes under `/_fake/` aside), oldest first. */
   requests: () => FakeRequest[];
+
+  /**
+   * Plays the owner of `owner/name` inviting `invitee` (seeded if new) to
+   * collaborate, as on github.com. Returns the open invitation.
+   */
+  invite: (owner: string, name: string, invitee: string) => FakeInvitation;
+  /** Logins with collaborator access to `owner/name` (the owner aside), in the order they joined. */
+  collaborators: (owner: string, name: string) => string[];
+  /** Open invitations to `owner/name`, oldest first. */
+  invitations: (owner: string, name: string) => FakeInvitation[];
 }
 
 export function createFakeGitHub(options: FakeGitHubOptions = {}): FakeGitHub {
@@ -97,6 +121,14 @@ export function createFakeGitHub(options: FakeGitHubOptions = {}): FakeGitHub {
     files: (owner, name) => readFiles(requireRepo(state, owner, name)),
     commits: (owner, name) => commitLog(requireRepo(state, owner, name)),
     requests: () => [...state.requests],
+    invite: (owner, name, invitee) => {
+      const repo = requireRepo(state, owner, name);
+      const invitation = inviteCollaborator(state, repo, findUser(state, invitee) ?? addUser(state, { login: invitee }));
+      if (!invitation) throw new Error(`${invitee} already collaborates on ${owner}/${name}`);
+      return invitation;
+    },
+    collaborators: (owner, name) => [...requireRepo(state, owner, name).collaborators.values()].map((user) => user.login),
+    invitations: (owner, name) => invitationsTo(state, requireRepo(state, owner, name)),
 
     authorize: async (authorizeUrl, as) => {
       const url = new URL(authorizeUrl);

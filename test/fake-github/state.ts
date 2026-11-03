@@ -72,6 +72,22 @@ export interface FakeRepo {
   /** Branches and tags: `heads/main` → commit SHA. Empty for an empty repository. */
   refs: Map<string, string>;
   objects: ObjectStore;
+  /** Saved lowercase, in the order given. */
+  topics: string[];
+  /** People other than the owner with access, by lowercased login. */
+  collaborators: Map<string, FakeUser>;
+}
+
+/** An open invitation to collaborate on a repository, until the invitee accepts or declines it. */
+export interface FakeInvitation {
+  id: number;
+  nodeId: string;
+  /** The repository's key in `FakeState.repos`. */
+  repo: string;
+  invitee: FakeUser;
+  inviter: FakeUser;
+  /** Epoch milliseconds. */
+  createdAt: number;
 }
 
 /** One request the fake answered, for tests that check what GitHub was asked. */
@@ -91,6 +107,7 @@ export interface FakeState {
   refreshTokens: Map<string, RefreshToken>;
   /** By lowercased `owner/name`. */
   repos: Map<string, FakeRepo>;
+  invitations: Map<number, FakeInvitation>;
   requests: FakeRequest[];
   nextId: () => number;
 }
@@ -105,6 +122,7 @@ export function createState(options: { now?: () => number } = {}): FakeState {
     accessTokens: new Map(),
     refreshTokens: new Map(),
     repos: new Map(),
+    invitations: new Map(),
     requests: [],
     nextId: () => ++lastId,
   };
@@ -189,12 +207,18 @@ export function findRepo(state: FakeState, owner: string, name: string): FakeRep
   return state.repos.get(`${owner}/${name}`.toLowerCase());
 }
 
-/** Private repositories are visible to their owner only (collaborators come with shared notebooks). */
+/** Private repositories are visible to their owner and collaborators only. */
 export function canRead(user: FakeUser | null, repo: FakeRepo): boolean {
   return !repo.private || canWrite(user, repo);
 }
 
+/** Collaborators on a personal account's repository can always push: GitHub has no read-only collaborators there. */
 export function canWrite(user: FakeUser | null, repo: FakeRepo): boolean {
+  return isAdmin(user, repo) || (!!user && repo.collaborators.has(user.login.toLowerCase()));
+}
+
+/** Only the owner administers a personal account's repository: its topics, collaborators and invitations. */
+export function isAdmin(user: FakeUser | null, repo: FakeRepo): boolean {
   return !!user && user.login.toLowerCase() === repo.owner.toLowerCase();
 }
 
@@ -214,6 +238,9 @@ export interface RepoSeed {
   description?: string | null;
   /** Files in the initial commit, by path. Without files the repository is empty (no commits). */
   files?: Record<string, string>;
+  topics?: string[];
+  /** Logins with collaborator access already (their invitations accepted); seeded as users if new. */
+  collaborators?: string[];
 }
 
 /** Creates a repository (and its owner, if new). Adding a repository that exists returns it unchanged. */
@@ -233,7 +260,10 @@ export function addRepo(state: FakeState, seed: RepoSeed): FakeRepo {
     createdAt: new Date(state.now()).toISOString(),
     refs: new Map(),
     objects: new Map(),
+    topics: (seed.topics ?? []).map((topic) => topic.toLowerCase()),
+    collaborators: new Map(),
   };
+  for (const login of seed.collaborators ?? []) addCollaborator(repo, addUser(state, { login }));
   state.repos.set(`${repo.owner}/${repo.name}`.toLowerCase(), repo);
   if (seed.files) commitFiles(state, repo, { message: "Initial commit", files: seed.files });
   return repo;
@@ -316,4 +346,74 @@ export function commitLog(repo: FakeRepo, branch = repo.defaultBranch): FakeComm
     sha = commit.parents[0];
   }
   return log;
+}
+
+// ---------------------------------------------------- Collaborators and invitations
+
+/** Pending invitations expire after 7 days (GitHub: "Inviting collaborators to a personal repository"). */
+export const INVITATION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function repoKey(repo: FakeRepo): string {
+  return `${repo.owner}/${repo.name}`.toLowerCase();
+}
+
+export function isCollaborator(repo: FakeRepo, login: string): boolean {
+  return repo.collaborators.has(login.toLowerCase());
+}
+
+export function addCollaborator(repo: FakeRepo, user: FakeUser): void {
+  if (user.login.toLowerCase() !== repo.owner.toLowerCase()) repo.collaborators.set(user.login.toLowerCase(), user);
+}
+
+export function removeCollaborator(repo: FakeRepo, login: string): void {
+  repo.collaborators.delete(login.toLowerCase());
+}
+
+export function invitationExpired(state: FakeState, invitation: FakeInvitation): boolean {
+  return state.now() - invitation.createdAt >= INVITATION_LIFETIME_MS;
+}
+
+/** Open invitations to `repo`, oldest first. */
+export function invitationsTo(state: FakeState, repo: FakeRepo): FakeInvitation[] {
+  return [...state.invitations.values()].filter((invitation) => invitation.repo === repoKey(repo));
+}
+
+/** Open invitations addressed to `login`, oldest first. */
+export function invitationsFor(state: FakeState, login: string): FakeInvitation[] {
+  return [...state.invitations.values()].filter(
+    (invitation) => invitation.invitee.login.toLowerCase() === login.toLowerCase(),
+  );
+}
+
+/**
+ * Invites `invitee` to collaborate on `repo`, as its owner does. Returns the
+ * open invitation (the existing one if they were already invited and it hasn't
+ * expired), or `null` when they already collaborate.
+ */
+export function inviteCollaborator(state: FakeState, repo: FakeRepo, invitee: FakeUser): FakeInvitation | null {
+  if (isCollaborator(repo, invitee.login)) return null;
+  const existing = invitationsTo(state, repo).find(
+    (invitation) => invitation.invitee.login.toLowerCase() === invitee.login.toLowerCase(),
+  );
+  if (existing && !invitationExpired(state, existing)) return existing;
+  if (existing) state.invitations.delete(existing.id);
+
+  const id = state.nextId();
+  const invitation: FakeInvitation = {
+    id,
+    nodeId: Buffer.from(`015:RepositoryInvitation${id}`).toString("base64"),
+    repo: repoKey(repo),
+    invitee,
+    inviter: addUser(state, { login: repo.owner }),
+    createdAt: state.now(),
+  };
+  state.invitations.set(id, invitation);
+  return invitation;
+}
+
+/** The invitee accepts: they become a collaborator and the invitation closes. */
+export function acceptInvitation(state: FakeState, invitation: FakeInvitation): void {
+  const repo = state.repos.get(invitation.repo);
+  if (repo) addCollaborator(repo, invitation.invitee);
+  state.invitations.delete(invitation.id);
 }

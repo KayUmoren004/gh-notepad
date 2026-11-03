@@ -20,6 +20,12 @@ export function userJson(user: FakeUser, apiOrigin: string) {
   };
 }
 
+/** The simple user GitHub nests in other payloads (invitations, collaborators): no profile fields. */
+export function simpleUserJson(user: FakeUser, apiOrigin: string) {
+  const { login, id, node_id, avatar_url, gravatar_id, url, html_url, type, site_admin } = userJson(user, apiOrigin);
+  return { login, id, node_id, avatar_url, gravatar_id, url, html_url, type, site_admin };
+}
+
 function scopesHeader(state: FakeState, request: Request): string {
   const token = /^(?:bearer|token)\s+(\S+)$/i.exec(request.headers.get("authorization") ?? "")?.[1];
   return token ? (state.accessTokens.get(token)?.scopes.join(", ") ?? "") : "";
