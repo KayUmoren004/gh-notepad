@@ -42,6 +42,10 @@ _Avoid_: Category, collection
 A label attached to a note, used to find notes across folders and notebooks.
 _Avoid_: Label, keyword
 
+**Recent**:
+The last notes edited, newest first, listed at the top of the sidebar so the member can get back to them.
+_Avoid_: History (that is a note's versions), last opened
+
 **Attachment**:
 An image stored in a notebook and embedded in a note.
 _Avoid_: Upload, blob, asset

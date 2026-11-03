@@ -18,7 +18,9 @@ import {
   Link,
   List,
   ListChecks,
+  LogOut,
   Notebook,
+  PanelLeftClose,
   Search,
   SquarePen,
   Strikethrough,
@@ -67,10 +69,12 @@ interface TreeRow {
   open?: boolean;
   active?: boolean;
   shared?: boolean;
+  /** A notebook's note count. */
+  count?: number;
 }
 
 const tree: TreeRow[] = [
-  { label: "my-notes", depth: 0, kind: "notebook", open: true },
+  { label: "my-notes", depth: 0, kind: "notebook", open: true, count: 42 },
   { label: "Journal", depth: 1, kind: "folder" },
   { label: "Projects", depth: 1, kind: "folder", open: true },
   { label: "Garden plan", depth: 2, kind: "note", active: true },
@@ -90,12 +94,26 @@ function Sidebar({ className }: { className?: string }) {
         <div className="flex items-center gap-2 px-2 py-1.5">
           <span className="flex size-5 items-center justify-center rounded-full bg-accent text-xs font-medium">M</span>
           <span className="font-medium">mira</span>
+          <LogOut className="ml-auto size-3.5 text-muted-foreground" />
+          <PanelLeftClose className="size-3.5 text-muted-foreground" />
         </div>
+        <SidebarItem icon={SquarePen}>
+          New note
+          <span className="ml-auto font-mono text-xs text-muted-foreground">⌘N</span>
+        </SidebarItem>
         <SidebarItem icon={Search}>
           Search
           <span className="ml-auto font-mono text-xs text-muted-foreground">⌘K</span>
         </SidebarItem>
-        <SidebarItem icon={SquarePen}>New note</SidebarItem>
+      </div>
+
+      <div className="flex flex-col gap-0.5">
+        <SectionLabel>Recent</SectionLabel>
+        {["Garden plan", "Groceries"].map((title) => (
+          <SidebarItem key={title} icon={FileText}>
+            {title}
+          </SidebarItem>
+        ))}
       </div>
 
       <div className="flex flex-col gap-0.5">
@@ -136,6 +154,7 @@ function TreeItem({ row }: { row: TreeRow }) {
       <Icon className="size-4 shrink-0" />
       <span className={cn("truncate", row.kind === "notebook" && "font-medium text-sidebar-foreground")}>{row.label}</span>
       {row.shared && <Users className="ml-auto size-3.5 shrink-0" />}
+      {row.count !== undefined && <span className="ml-auto text-xs text-muted-foreground/70 tabular-nums">{row.count}</span>}
     </div>
   );
 }
