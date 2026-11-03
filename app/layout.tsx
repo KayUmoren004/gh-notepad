@@ -5,10 +5,23 @@ import { AppServiceWorker } from "@/components/app-service-worker";
 import { cn } from "@/lib/utils";
 import "./globals.css";
 
+const description =
+  "An invite-only notepad that keeps your notes as Markdown files in your own GitHub repositories, with rich text editing, version history and sharing, online or offline.";
+
 export const metadata: Metadata = {
+  // Makes the canonical URL and the social image (app/opengraph-image.tsx) absolute, as link previews need.
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
   title: { default: "Notepad", template: "%s · Notepad" },
-  description: "An invite-only notepad whose notes are Markdown files in your own GitHub repositories.",
+  description,
   applicationName: "Notepad",
+  openGraph: {
+    type: "website",
+    siteName: "Notepad",
+    title: "Notepad: your notes, in your own GitHub",
+    description,
+    locale: "en_US",
+  },
+  twitter: { card: "summary_large_image" },
   // Drawn by scripts/generate-icons.mjs; the manifest's icons come from app/manifest.ts.
   icons: {
     icon: [
