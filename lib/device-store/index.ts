@@ -4,7 +4,10 @@
  *
  * - The UI reads `getState()` and re-renders through `subscribe`; it changes
  *   notes only through intent-level operations (`createNote`, `editBody`,
- *   `rename`), so every path follows the same rules.
+ *   `rename`, `moveNote`), so every path follows the same rules.
+ * - Folders are made and moved the same way (`createFolder`, `renameFolder`,
+ *   `moveFolder`): a folder made here is kept even while empty (a `.gitkeep`
+ *   in the notebook), and moving one moves every note in it, ids kept.
  * - Writes change memory at once and reach IndexedDB in a short trailing
  *   write, flushed straight away when the tab is hidden or the page unloads.
  * - `sync` is the sync engine's side: records with their agreed versions, and
@@ -35,6 +38,10 @@ export {
   type DeviceState,
   type DeviceStore,
   type DeviceStoreOptions,
+  type Folder,
+  type FolderMove,
+  type FolderPullChange,
+  type FolderRecord,
   type NewAttachment,
   type Note,
   type Notebook,

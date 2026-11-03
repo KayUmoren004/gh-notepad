@@ -47,6 +47,15 @@ export interface AttachmentRow {
   synced: boolean;
 }
 
+/** A folder kept on its own (by a `.gitkeep` in the notebook), whether or not notes are in it. */
+export interface FolderRow {
+  notebook: string;
+  /** The folder's path on this device, `Projects/Garden`. */
+  path: string;
+  /** The path its marker has in the notebook; `null` until a push lands it. */
+  base: string | null;
+}
+
 export interface DatabaseOptions {
   indexedDB?: IDBFactory;
   IDBKeyRange?: typeof IDBKeyRange;
@@ -62,11 +71,18 @@ export class NotepadDatabase extends Dexie {
   notes!: Table<NoteRow, string>;
   notebooks!: Table<NotebookRow, string>;
   attachments!: Table<AttachmentRow, [string, string]>;
+  folders!: Table<FolderRow, [string, string]>;
 
   constructor(accountId: number, options: DatabaseOptions = {}) {
     super(databaseName(accountId), options);
     this.version(1).stores({ notes: "key, notebook", notebooks: "id" });
     this.version(2).stores({ notes: "key, notebook", notebooks: "id", attachments: "[notebook+path], notebook" });
+    this.version(3).stores({
+      notes: "key, notebook",
+      notebooks: "id",
+      attachments: "[notebook+path], notebook",
+      folders: "[notebook+path], notebook",
+    });
   }
 }
 
