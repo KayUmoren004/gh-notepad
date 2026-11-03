@@ -1,6 +1,26 @@
 import { apiError, escapeHtml, json, type FakeRoute } from "../router";
-import { accessTokensFor, addUser, findUser } from "../state";
+import { accessTokensFor, addRepo, addUser, findRepo, findUser, inviteCollaborator, type RepoSeed } from "../state";
 import { userJson } from "./users";
+
+const strings = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === "string");
+
+function repoSeed(value: unknown): RepoSeed | null {
+  if (!value || typeof value !== "object") return null;
+  const body = value as Record<string, unknown>;
+  if (typeof body.owner !== "string" || typeof body.name !== "string") return null;
+  const files = body.files && typeof body.files === "object" ? (body.files as Record<string, unknown>) : undefined;
+  return {
+    owner: body.owner,
+    name: body.name,
+    private: typeof body.private === "boolean" ? body.private : undefined,
+    topics: strings(body.topics) ? body.topics : undefined,
+    collaborators: strings(body.collaborators) ? body.collaborators : undefined,
+    files: files && Object.values(files).every((content) => typeof content === "string")
+      ? (files as Record<string, string>)
+      : undefined,
+  };
+}
 
 /**
  * Endpoints real GitHub doesn't have, all under `/_fake/`: the control API that
@@ -29,6 +49,37 @@ export const fakeOnlyRoutes: FakeRoute[] = [
     method: "GET",
     path: "/_fake/users/:login/tokens",
     handle: ({ params, state }) => json(accessTokensFor(state, params.login)),
+  },
+  {
+    method: "POST",
+    path: "/_fake/repos",
+    handle: async ({ request, state }) => {
+      const seed = repoSeed(await request.json().catch(() => null));
+      if (!seed) return apiError(422, "Validation Failed: owner and name are required");
+      const repo = addRepo(state, seed);
+      return json({ owner: repo.owner, name: repo.name }, { status: 201 });
+    },
+  },
+  {
+    method: "POST",
+    path: "/_fake/repos/:owner/:repo/invitations",
+    handle: async ({ request, params, state }) => {
+      const repo = findRepo(state, params.owner, params.repo);
+      const body: unknown = await request.json().catch(() => null);
+      const invitee = body && typeof body === "object" && "invitee" in body ? body.invitee : undefined;
+      if (!repo || typeof invitee !== "string") return apiError(404, "Not Found");
+      // Idempotent, for retried tests: the open invitation again, or none once they collaborate.
+      const invitation = inviteCollaborator(state, repo, addUser(state, { login: invitee }));
+      return json({ id: invitation?.id ?? null }, { status: 201 });
+    },
+  },
+  {
+    method: "GET",
+    path: "/_fake/repos/:owner/:repo/collaborators",
+    handle: ({ params, state }) => {
+      const repo = findRepo(state, params.owner, params.repo);
+      return repo ? json([...repo.collaborators.values()].map((user) => user.login)) : apiError(404, "Not Found");
+    },
   },
   {
     method: "GET",
