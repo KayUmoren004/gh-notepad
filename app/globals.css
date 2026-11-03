@@ -2,42 +2,158 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Dark only. The root element carries `.dark`, so shadcn's `dark:` variants always apply. */
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * `hover:` applies only to a precise pointer that can hover. Touch screens fake
+ * :hover on tap and leave it stuck; touch gets press feedback (`pressable`) instead.
+ */
+@custom-variant hover {
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      @slot;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------- Motion */
+
+@theme {
+  /* Strong ease-out curves only; ease-in makes UI feel sluggish, so it doesn't exist here. */
+  --ease-*: initial;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+
+  /* `animate-enter`: fade up into place. For screens and occasional surfaces, never for keyboard actions. */
+  --animate-enter: enter var(--duration-enter) var(--ease-out) both;
+
+  @keyframes enter {
+    from {
+      opacity: 0;
+      transform: translateY(var(--enter-offset)) scale(var(--enter-scale));
+    }
+  }
+}
+
+:root {
+  /* Durations: UI motion stays under 300 ms. */
+  --duration-press: 120ms;
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --duration-enter: 250ms;
+
+  /* Movement. Reduced motion zeroes these, so anything built on them becomes a fade. */
+  --press-scale: 0.97;
+  --enter-offset: 0.5rem;
+  --enter-scale: 0.98;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --press-scale: 1;
+    --enter-offset: 0px;
+    --enter-scale: 1;
+  }
+}
+
+/* Press feedback: responds the moment a finger or button goes down, not on release. */
+@utility pressable {
+  transition-property: color, background-color, border-color, box-shadow, opacity, scale;
+  transition-duration: var(--duration-press);
+  transition-timing-function: var(--ease-out);
+
+  &:active:not(:disabled, [aria-disabled="true"]) {
+    scale: var(--press-scale);
+  }
+}
+
+/* ---------------------------------------------------------------- Safe areas */
+
+/* The viewport is `viewport-fit=cover`: chrome paints edge to edge and pads its content clear of notches. */
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@utility px-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* ---------------------------------------------------------------- Color */
+
+/*
+ * Warm grays with soft contrast: no pure black or white. `--background` is also
+ * the `themeColor` in app/layout.tsx; change both together.
+ */
+:root {
+  --background: #191817;
+  --foreground: #e7e4df;
+  --card: #1f1e1c;
+  --card-foreground: #e7e4df;
+  --popover: #252422;
+  --popover-foreground: #e7e4df;
+  --primary: #e7e4df;
+  --primary-foreground: #191817;
+  --secondary: #2a2826;
+  --secondary-foreground: #e7e4df;
+  --muted: #2a2826;
+  --muted-foreground: #9d9890;
+  --accent: #2f2d2a;
+  --accent-foreground: #e7e4df;
+  --destructive: #e0695b;
+  --border: #2f2d2a;
+  --input: #3a3733;
+  --ring: #77726b;
+  --radius: 0.5rem;
+
+  --sidebar: #1f1e1c;
+  --sidebar-foreground: #e7e4df;
+  --sidebar-primary: #e7e4df;
+  --sidebar-primary-foreground: #191817;
+  --sidebar-accent: #2a2826;
+  --sidebar-accent-foreground: #e7e4df;
+  --sidebar-border: #2f2d2a;
+  --sidebar-ring: #77726b;
+}
+
 @theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -47,117 +163,55 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
-:root {
-  --background: oklch(0.99 0 0);
-  --foreground: oklch(0.15 0.01 60);
-  --card: oklch(0.99 0 0);
-  --card-foreground: oklch(0.15 0.01 60);
-  --popover: oklch(0.99 0 0);
-  --popover-foreground: oklch(0.15 0.01 60);
-  --primary: oklch(0.25 0.01 60);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.96 0.005 60);
-  --secondary-foreground: oklch(0.25 0.01 60);
-  --muted: oklch(0.96 0.005 60);
-  --muted-foreground: oklch(0.5 0.01 60);
-  --accent: oklch(0.96 0.005 60);
-  --accent-foreground: oklch(0.25 0.01 60);
-  --destructive: oklch(0.58 0.18 25);
-  --border: oklch(0.9 0.005 60);
-  --input: oklch(0.9 0.005 60);
-  --ring: oklch(0.65 0.01 60);
-  --chart-1: oklch(0.7 0.08 250);
-  --chart-2: oklch(0.6 0.12 250);
-  --chart-3: oklch(0.55 0.15 250);
-  --chart-4: oklch(0.5 0.15 250);
-  --chart-5: oklch(0.45 0.12 250);
-  --radius: 0.5rem;
-  --sidebar: oklch(0.98 0.005 60);
-  --sidebar-foreground: oklch(0.15 0.01 60);
-  --sidebar-primary: oklch(0.25 0.01 60);
-  --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent: oklch(0.94 0.005 60);
-  --sidebar-accent-foreground: oklch(0.25 0.01 60);
-  --sidebar-border: oklch(0.9 0.005 60);
-  --sidebar-ring: oklch(0.65 0.01 60);
-}
-
-/* Notion-like dark theme: warm grays, soft contrast, minimal chrome */
-.dark {
-  /* Warm dark background - not pure black */
-  --background: oklch(0.13 0.01 60);
-  /* Soft white foreground - not pure white */
-  --foreground: oklch(0.92 0.005 60);
-  /* Slightly lighter card for subtle elevation */
-  --card: oklch(0.16 0.01 60);
-  --card-foreground: oklch(0.92 0.005 60);
-  /* Popover same as card */
-  --popover: oklch(0.18 0.01 60);
-  --popover-foreground: oklch(0.92 0.005 60);
-  /* Muted primary - soft off-white */
-  --primary: oklch(0.88 0.005 60);
-  --primary-foreground: oklch(0.16 0.01 60);
-  /* Secondary - subtle warm gray */
-  --secondary: oklch(0.22 0.01 60);
-  --secondary-foreground: oklch(0.88 0.005 60);
-  /* Muted elements */
-  --muted: oklch(0.22 0.01 60);
-  --muted-foreground: oklch(0.55 0.01 60);
-  /* Accent - subtle highlight */
-  --accent: oklch(0.24 0.01 60);
-  --accent-foreground: oklch(0.92 0.005 60);
-  /* Destructive - muted red */
-  --destructive: oklch(0.62 0.15 22);
-  /* Very subtle borders - key for Notion look */
-  --border: oklch(0.25 0.01 60);
-  --input: oklch(0.25 0.01 60);
-  --ring: oklch(0.45 0.01 60);
-  /* Charts */
-  --chart-1: oklch(0.7 0.08 250);
-  --chart-2: oklch(0.6 0.12 250);
-  --chart-3: oklch(0.55 0.15 250);
-  --chart-4: oklch(0.5 0.15 250);
-  --chart-5: oklch(0.45 0.12 250);
-  /* Sidebar - slightly darker than background */
-  --sidebar: oklch(0.12 0.01 60);
-  --sidebar-foreground: oklch(0.92 0.005 60);
-  --sidebar-primary: oklch(0.7 0.08 250);
-  --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent: oklch(0.2 0.01 60);
-  --sidebar-accent-foreground: oklch(0.92 0.005 60);
-  --sidebar-border: oklch(0.22 0.01 60);
-  --sidebar-ring: oklch(0.45 0.01 60);
-}
+/* ---------------------------------------------------------------- Mobile-native baseline */
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
+  html {
+    color-scheme: dark;
+    background-color: var(--background);
+    /* No gray flash over tapped controls; each control has its own press state. */
+    -webkit-tap-highlight-color: transparent;
+    /* No font inflation in landscape. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    /* The app owns its scrolling: no pull-to-refresh or page rubber-banding. */
+    overscroll-behavior: none;
+  }
+
   body {
     @apply bg-background text-foreground;
+    overscroll-behavior: none;
+    min-height: 100dvh;
   }
-}
 
-/* Custom scrollbar for Notion-like feel */
-@layer base {
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+  /* iOS zooms into any field under 16px and never zooms back out. */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
   }
-  ::-webkit-scrollbar-track {
-    background: transparent;
+
+  /* Taps on controls fire at once: no double-tap-to-zoom wait. */
+  a,
+  button,
+  [role="button"],
+  label,
+  summary,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
   }
-  ::-webkit-scrollbar-thumb {
-    background: oklch(0.35 0.01 60);
-    border-radius: 4px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.45 0.01 60);
-  }
-  .dark ::-webkit-scrollbar-thumb {
-    background: oklch(0.28 0.01 60);
-  }
-  .dark ::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.35 0.01 60);
+
+  /* A long press on a control doesn't select its label. Content stays selectable. */
+  button,
+  [role="button"] {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
   }
 }
