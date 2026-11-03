@@ -116,6 +116,7 @@ test("signing out removing the notes: they are gone from the device and come bac
 test("removing with unsynced changes warns first, naming the notes that would lose them", async ({
   page,
   signInAs,
+  isMobile,
 }, testInfo) => {
   const { first } = signOutMembers[testInfo.project.name];
   const stamp = `${testInfo.project.name} ${Date.now()}`;
@@ -125,8 +126,7 @@ test("removing with unsynced changes warns first, naming the notes that would lo
   await page.route(NOTEBOOK_ROUTES, (route) => route.abort());
   await createNote(page, titles[0], "Only here");
   // On a phone the open note covers the list, and its "Notes" button leads back.
-  const back = page.getByRole("button", { name: "Notes" });
-  if (await back.isVisible()) await back.click();
+  if (isMobile) await page.getByRole("button", { name: "Notes", exact: true }).click();
   await createNote(page, titles[1], "Also only here");
   await expect(page.getByRole("status")).toHaveText(/^Saved/);
 
