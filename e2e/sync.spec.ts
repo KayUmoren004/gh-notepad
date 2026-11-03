@@ -54,7 +54,7 @@ test("edits to different parts of a note on two devices, one of them offline, ar
   await writeNote(page, title, "Alpha\nBravo\nCharlie");
 
   const other = await signInOnAnotherDevice(members.allowed);
-  await other.getByRole("button", { name: title }).click({ timeout: 20_000 });
+  await other.getByRole("button", { name: title, exact: true }).click({ timeout: 20_000 });
   await expect(other.getByRole("textbox", { name: "Note text" })).toContainText("Charlie");
   await expect(other.getByRole("status")).toHaveText("Synced");
 
@@ -94,7 +94,7 @@ test("edits to the same line on two devices keep each device's own text, with th
   await writeNote(page, title, "Alpha\nBravo\nCharlie");
 
   const other = await signInOnAnotherDevice(members.allowed);
-  await other.getByRole("button", { name: title }).click({ timeout: 20_000 });
+  await other.getByRole("button", { name: title, exact: true }).click({ timeout: 20_000 });
   await expect(other.getByRole("textbox", { name: "Note text" })).toContainText("Charlie");
   await expect(other.getByRole("status")).toHaveText("Synced");
 
@@ -131,7 +131,7 @@ test("edits to the same line on two devices keep each device's own text, with th
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(page.getByRole("textbox", { name: "Note text" })).toContainText("Alpha from the phone", synced);
   await showList(page, isMobile);
-  await expect(page.getByRole("button", { name: `${title} (conflict copy)` })).toBeVisible();
+  await expect(page.getByRole("button", { name: `${title} (conflict copy)`, exact: true })).toBeVisible();
 });
 
 test("an expired session asks the member to sign in again, keeps their writing, and syncs it once they have", async ({
@@ -154,14 +154,14 @@ test("an expired session asks the member to sign in again, keeps their writing, 
   await expect(prompt).toBeVisible();
 
   // Writing carries on meanwhile; nothing on the device is touched.
-  await page.getByRole("button", { name: title }).click();
+  await page.getByRole("button", { name: title, exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Note text" })).toContainText("Before the session ended, and after");
   await showList(page, isMobile);
 
   await prompt.getByRole("link", { name: "Sign in again" }).click();
   await page.getByRole("button", { name: `Authorize as ${members.allowed}` }).click();
   await expect(page).toHaveURL("/notes");
-  await page.getByRole("button", { name: title }).click();
+  await page.getByRole("button", { name: title, exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Note text" })).toContainText("Before the session ended, and after");
   await expect(page.getByRole("status")).toHaveText("Synced", synced);
   await expect(page.getByRole("alert", { name: "Sign in again to sync" })).toHaveCount(0);
@@ -190,7 +190,7 @@ test.describe("opening the app offline", () => {
     const response = await page.reload();
     expect(response?.fromServiceWorker()).toBe(true);
 
-    await page.getByRole("button", { name: title }).click();
+    await page.getByRole("button", { name: title, exact: true }).click();
     await expect(page.getByRole("textbox", { name: "Note text" })).toContainText("Written online");
     await appendTo(page, "Written online", ", edited offline");
     await expect(page.getByRole("status")).toHaveText("Saved · Offline", synced);
@@ -198,7 +198,7 @@ test.describe("opening the app offline", () => {
     await expect(page.getByText("Offline · syncs when you're back online")).toBeVisible();
 
     await reconnect(page);
-    await page.getByRole("button", { name: title }).click();
+    await page.getByRole("button", { name: title, exact: true }).click();
     await expect(page.getByRole("status")).toHaveText("Synced", synced);
     const files = await fakeGitHub.files(members.allowed, "my-notes");
     expect(files[`${title}.md`]).toMatch(/Written online, edited offline\n$/);
