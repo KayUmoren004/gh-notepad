@@ -146,7 +146,8 @@ export function createWorld({
         return api.handle(request);
       },
     });
-    const store = await openDeviceStore({ account: session.member, indexedDB, IDBKeyRange });
+    // The device's clock is the engine's, when a test drives one: what it stamps on notes agrees with when sync runs.
+    const store = await openDeviceStore({ account: session.member, indexedDB, IDBKeyRange, now: options.timers?.now });
     const engine = createSyncEngine({ store, remote, ...options });
     return {
       login: session.member.login,

@@ -1,5 +1,15 @@
 import { notebookId, type DeviceStore } from "@/lib/device-store";
-import { fallbackNoteId, folderOfKeepPath, isNotePath, isV1Path, titleOfPath } from "@/lib/notebook-format";
+import {
+  fallbackNoteId,
+  folderOfKeepPath,
+  folderOfTrashedKeepPath,
+  isNotePath,
+  isTrashPath,
+  isTrashedNotePath,
+  isV1Path,
+  purgeTime,
+  titleOfPath,
+} from "@/lib/notebook-format";
 import { RemoteError, type NotebookRef, type Remote, type RemoteFile } from "@/lib/remote";
 import { attachmentUnits, stageAttachments, withAttachments } from "./attachments";
 import { batchMessage, planBatches } from "./batches";
@@ -278,22 +288,35 @@ export function createSyncEngine({
     if (!head.changed) return;
 
     const tree = await remote.files(ref, head.commit);
-    const files = tree.filter((file) => isNotePath(file.path));
+    // Notes, the trashed ones among them: those read as trashed from their path and frontmatter.
+    const files = tree.filter((file) => isNotePath(file.path) || isTrashedNotePath(file.path));
     const v1 = tree.filter((file) => isV1Path(file.path));
-    // Folders kept while empty: their markers are listed, never fetched.
+    // Folders kept while empty: their markers are listed, never fetched, except a trashed folder's marker new
+    // to this device, which says when the folder was trashed.
     const keptFolders = tree.flatMap((file) => {
-      const folder = folderOfKeepPath(file.path);
+      const folder = folderOfKeepPath(file.path) ?? folderOfTrashedKeepPath(file.path);
       return folder === null ? [] : [folder];
+    });
+    const knownFolders = new Set(store.sync.folders(id).map((folder) => folder.path));
+    const trashedMarkers = tree.filter((file) => {
+      const folder = folderOfTrashedKeepPath(file.path);
+      return folder !== null && !knownFolders.has(folder);
     });
     // Only blobs this device hasn't seen are fetched.
     const known = new Map<string, string>();
     for (const record of store.sync.records(id)) if (record.base) known.set(record.base.sha, record.base.text);
     const fetched = await remote.blobs(
       ref,
-      [...files, ...v1].filter((file) => !known.has(file.sha)).map((file) => file.sha),
+      [...files, ...v1, ...trashedMarkers].filter((file) => !known.has(file.sha)).map((file) => file.sha),
     );
     const withText = (file: RemoteFile) => ({ ...file, text: known.get(file.sha) ?? fetched.get(file.sha) ?? "" });
     const notes: RemoteNote[] = files.map(withText);
+    const trashedDates = new Map(
+      trashedMarkers.map((file) => {
+        const date = withText(file).text.trim();
+        return [folderOfTrashedKeepPath(file.path) ?? "", purgeTime(date) === null ? "" : date];
+      }),
+    );
 
     // Decided and applied in one step: no edit can land in between.
     const records = store.sync.records(id);
@@ -303,7 +326,7 @@ export function createSyncEngine({
       v1.length > 0 ? planMigration(head.commit, v1.map(withText), { records, pulled: changes, remote: notes }) : null;
     if (migration) migrations.set(id, migration);
     else migrations.delete(id);
-    const folderChanges = reconcileFolders(store.sync.folders(id), keptFolders);
+    const folderChanges = reconcileFolders(store.sync.folders(id), keptFolders, trashedDates);
     // Until the conversion is committed this head counts as unseen, so a reload before then converts again.
     store.sync.applyPull(
       id,
@@ -335,19 +358,33 @@ export function createSyncEngine({
   async function push(id: string, ref: NotebookRef): Promise<"clean" | "pushed" | "branch-moved"> {
     const migration = migrations.get(id);
     let base = migration?.base ?? store.sync.notebook(id)?.head;
-    const dirty = store.sync.records(id).filter((record) => record.dirty);
+    // Whatever has waited in the Trash for the retention period leaves it for good with this push.
+    store.sync.purge(id, timers.now());
+    const records = store.sync.records(id);
+    const folderRecords = store.sync.folders(id);
+    const dirty = records.filter((record) => record.dirty);
     // Folders kept while empty whose markers must be added or moved, and what moved since the last push.
-    const folders = { dirty: store.sync.folders(id).filter((record) => record.dirty), moves: store.sync.folderMoves(id) };
+    const folders = { dirty: folderRecords.filter((record) => record.dirty), moves: store.sync.folderMoves(id) };
+    // Notes and folders deleted from the Trash for good, still in the notebook until this push removes them.
+    const deletions = {
+      notes: records.filter((record) => record.deleted),
+      folders: folderRecords.filter((record) => record.deleted),
+      emptiesTrash:
+        !records.some((record) => !record.deleted && isTrashPath(record.path)) &&
+        !folderRecords.some((record) => !record.deleted && isTrashPath(record.path)),
+    };
+    const removing = deletions.notes.length + deletions.folders.length > 0;
     // Attachments inserted on this device go into the same commit as the notes that embed them (ADR 0003).
     const attachments = await stageAttachments(store, remote, id, ref);
-    if (dirty.length === 0 && folders.dirty.length === 0 && !migration && attachments.paths.length === 0) return "clean";
+    if (dirty.length === 0 && folders.dirty.length === 0 && !removing && !migration && attachments.paths.length === 0) return "clean";
     if (!base) throw new Error("The notebook has no commits yet");
 
-    const plan = planPush(dirty, folders);
+    const plan = planPush(dirty, folders, deletions);
     let units = attachmentUnits(plan.units, attachments);
     if (migration) units = migrationUnits(migration, units);
     const batches = planBatches(units, maxChangesPerCommit);
-    const message = withAttachments(migration?.message ?? plan.message, dirty.length + folders.dirty.length, attachments);
+    const changed = dirty.length + folders.dirty.length + deletions.notes.length + deletions.folders.length;
+    const message = withAttachments(migration?.message ?? plan.message, changed, attachments);
     for (const [index, batch] of batches.entries()) {
       if (batches.length > 1) setStatus({ state: "syncing", progress: { done: index, total: batches.length } });
       const result = await remote.commit(ref, {
@@ -367,6 +404,7 @@ export function createSyncEngine({
         landed,
         batch.notes.map(({ id: noteId, path, text }) => ({ id: noteId, base: { path, text, sha: result.blobs[path] } })),
         batch.folders,
+        batch.removed,
       );
       shares.landed(id, batch.notes);
     }

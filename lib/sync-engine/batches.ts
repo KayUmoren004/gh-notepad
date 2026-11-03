@@ -17,6 +17,8 @@ export interface ChangeUnit {
   notes: PushedNote[];
   /** The folders (by path) whose markers the unit carries; they count as synced once it lands. */
   folders?: string[];
+  /** The notes (by id) and folders (by path) the unit removes from the Trash for good; they leave the device once it lands. */
+  removed?: { notes: string[]; folders: string[] };
   changes: FileChange[];
 }
 
@@ -24,6 +26,7 @@ export interface ChangeUnit {
 export interface Batch {
   notes: PushedNote[];
   folders: string[];
+  removed: { notes: string[]; folders: string[] };
   changes: FileChange[];
 }
 
@@ -42,11 +45,13 @@ export function planBatches(units: readonly ChangeUnit[], limit: number): Batch[
       throw new Error(`${count(unit.changes.length)} changes must land together, but a commit holds at most ${count(limit)}`);
     }
     if (!current || current.changes.length + unit.changes.length > limit) {
-      current = { notes: [], folders: [], changes: [] };
+      current = { notes: [], folders: [], removed: { notes: [], folders: [] }, changes: [] };
       batches.push(current);
     }
     current.notes.push(...unit.notes);
     current.folders.push(...(unit.folders ?? []));
+    current.removed.notes.push(...(unit.removed?.notes ?? []));
+    current.removed.folders.push(...(unit.removed?.folders ?? []));
     current.changes.push(...unit.changes);
   }
   return batches;
@@ -107,6 +112,10 @@ function merge(group: readonly ChangeUnit[]): ChangeUnit {
   return {
     notes: group.flatMap((unit) => unit.notes),
     folders: group.flatMap((unit) => unit.folders ?? []),
+    removed: {
+      notes: group.flatMap((unit) => unit.removed?.notes ?? []),
+      folders: group.flatMap((unit) => unit.removed?.folders ?? []),
+    },
     changes: [...changes.values()],
   };
 }

@@ -5,7 +5,8 @@ import { count, type ChangeUnit } from "./batches";
 
 /**
  * Decides what a pull does to the folders kept on their own, given the
- * folders whose `.gitkeep` the notebook holds at the commit being pulled.
+ * folders whose `.gitkeep` the notebook holds at the commit being pulled
+ * (trashed ones among them, with what their markers say in `trashedDates`).
  *
  * - A marker the device already knows (as a folder's base) is unchanged, even
  *   if the folder was renamed here: the push moves the marker.
@@ -14,7 +15,11 @@ import { count, type ChangeUnit } from "./batches";
  * - A marker gone from the notebook takes its folder from the device, unless
  *   the folder was renamed here, which the push then adds afresh.
  */
-export function reconcileFolders(records: readonly FolderRecord[], remote: readonly string[]): FolderPullChange[] {
+export function reconcileFolders(
+  records: readonly FolderRecord[],
+  remote: readonly string[],
+  trashedDates: ReadonlyMap<string, string> = new Map(),
+): FolderPullChange[] {
   const changes: FolderPullChange[] = [];
   const kept = new Set(remote);
   const bases = new Set(records.flatMap((record) => (record.base === null ? [] : [record.base])));
@@ -22,7 +27,10 @@ export function reconcileFolders(records: readonly FolderRecord[], remote: reado
   for (const folder of remote) {
     if (bases.has(folder)) continue;
     const here = byPath.get(folder);
-    if (!here || here.base !== folder) changes.push({ path: folder, base: folder });
+    if (!here || here.base !== folder) {
+      const trashed = trashedDates.get(folder);
+      changes.push(trashed === undefined ? { path: folder, base: folder } : { path: folder, base: folder, trashed });
+    }
   }
   for (const record of records) {
     if (record.base === null || kept.has(record.base)) continue;
@@ -32,12 +40,16 @@ export function reconcileFolders(records: readonly FolderRecord[], remote: reado
   return changes;
 }
 
-/** The changes a folder's marker needs in one commit: added where the folder is, and removed from where it was. */
+/**
+ * The changes a folder's marker needs in one commit: added where the folder
+ * is, and removed from where it was. A trashed folder's marker says when it
+ * was trashed, so other devices (and the purge) know.
+ */
 export function folderUnits(dirty: readonly FolderRecord[]): ChangeUnit[] {
   return dirty.map((record) => {
     const changes: FileChange[] = [];
     if (record.base !== null && record.base !== record.path) changes.push({ path: folderKeepPath(record.base), delete: true });
-    changes.push({ path: folderKeepPath(record.path), content: "" });
+    changes.push({ path: folderKeepPath(record.path), content: record.trashed ?? "" });
     return { notes: [], folders: [record.path], changes };
   });
 }

@@ -1,5 +1,5 @@
 import type { DeviceStore } from "@/lib/device-store";
-import { readNote } from "@/lib/notebook-format";
+import { isTrashPath, readNote } from "@/lib/notebook-format";
 import type { NotebookRef, Remote } from "@/lib/remote";
 import type { PushedNote } from "./batches";
 
@@ -39,8 +39,9 @@ export function createShareRepublisher(store: DeviceStore, remote: Remote): Shar
       let failure: unknown;
       for (const id of [...ids]) {
         const record = records.get(id);
-        // Gone, edited again since (its next push republishes it), or no longer shared: nothing to publish now.
-        if (!record || record.dirty || !readNote(record.text).share) {
+        // Gone, edited again since (its next push republishes it), no longer shared, or in the Trash (the
+        // published copy stays as it was until the note is restored or the link revoked): nothing to publish now.
+        if (!record || record.dirty || isTrashPath(record.path) || !readNote(record.text).share) {
           ids.delete(id);
           continue;
         }

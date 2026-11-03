@@ -51,7 +51,7 @@ describe("renaming and moving folders", () => {
     expect(laptop.store.note(cedar)).toMatchObject({ synced: true });
     expect(laptop.store.note(kitchen)).toMatchObject({ synced: true });
     expect([...laptop.store.getState().folders.values()]).toEqual([
-      { notebook: laptop.store.personalNotebook, path: "Allotment/Tools", synced: true },
+      { notebook: laptop.store.personalNotebook, path: "Allotment/Tools", synced: true, trashed: null },
     ]);
   });
 
@@ -192,16 +192,18 @@ describe("empty folders", () => {
     expect(world.github.files(member, notebook)["Someday/.gitkeep"]).toBe("");
   });
 
-  it("ignores markers that keep nothing a member sees", async () => {
+  it("ignores markers that keep nothing a member sees; a trashed folder's is a folder in the Trash", async () => {
     const world = createWorld();
     world.github.addRepo({
       owner: member,
       name: notebook,
-      files: { ".gitkeep": "", "attachments/.gitkeep": "", ".trash/Old/.gitkeep": "", "Kept/.gitkeep": "" },
+      files: { ".gitkeep": "", "attachments/.gitkeep": "", ".trash/Old/.gitkeep": "", ".hidden/.gitkeep": "", "Kept/.gitkeep": "" },
     });
     const laptop = await world.signIn(member);
     await laptop.sync();
-    expect(folderPaths(laptop)).toEqual(["Kept"]);
+    expect(folderPaths(laptop)).toEqual([".trash/Old", "Kept"]);
+    // A marker that doesn't say when: in the Trash, for a time no one knows.
+    expect([...laptop.store.getState().folders.values()].map((folder) => folder.trashed)).toEqual(["", null]);
   });
 });
 

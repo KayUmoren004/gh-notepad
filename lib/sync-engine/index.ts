@@ -29,6 +29,13 @@
  *   pull lists them, a push adds or moves them. A folder renamed or moved on
  *   the device is every note under it renamed (ids kept) plus its markers
  *   moved, in one push named after the move.
+ * - The Trash (`trash.ts`): a trashed note or folder is a move under
+ *   `.trash/`, a restore the move back, each one commit named for it
+ *   (`Delete "Garden"`, `Restore "Plan"`); a pull reads `.trash/**` as
+ *   trashed, fetching a trashed folder's marker for when it was trashed.
+ *   What was deleted from the Trash for good goes as delete units
+ *   (`Remove "Plan" from Trash`, `Empty Trash`), and every push first purges
+ *   whatever has waited in the Trash for the retention period.
  * - Every notebook the member can open is synced, the personal one first:
  *   the list is asked for on start, every few minutes, and on demand
  *   (`refreshNotebooks`, after creating a notebook or accepting an
