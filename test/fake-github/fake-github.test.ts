@@ -183,3 +183,240 @@ describe("fake GitHub: REST API", () => {
     expect(await response.json()).toMatchObject({ message: "Not Found", status: "404" });
   });
 });
+
+/** A member with a token, calling the REST API the way the gateway does. */
+function apiAs(github: FakeGitHub, login: string) {
+  github.addUser({ login });
+  const token = github.issueAccessToken(login);
+  return (path: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) =>
+    github.fetch(`https://api.github.com${path}`, {
+      method: init.method ?? "GET",
+      headers: {
+        accept: "application/vnd.github+json",
+        authorization: `Bearer ${token}`,
+        ...(init.body === undefined ? {} : { "content-type": "application/json" }),
+        ...init.headers,
+      },
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    });
+}
+
+describe("fake GitHub: repositories", () => {
+  it("creates a private repository with an initial commit for the authenticated user", async () => {
+    const github = createFakeGitHub();
+    const api = apiAs(github, "octo-member");
+
+    const created = await api("/user/repos", { method: "POST", body: { name: "my-notes", private: true, auto_init: true } });
+
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({
+      name: "my-notes",
+      full_name: "octo-member/my-notes",
+      private: true,
+      default_branch: "main",
+      owner: { login: "octo-member" },
+    });
+    const repo = await api("/repos/octo-member/my-notes");
+    expect(repo.status).toBe(200);
+    expect(github.commits("octo-member", "my-notes")).toHaveLength(1);
+    expect(Object.keys(github.files("octo-member", "my-notes"))).toEqual(["README.md"]);
+  });
+
+  it("refuses to create a repository whose name is taken", async () => {
+    const github = createFakeGitHub();
+    const api = apiAs(github, "octo-member");
+    await api("/user/repos", { method: "POST", body: { name: "my-notes" } });
+
+    const again = await api("/user/repos", { method: "POST", body: { name: "my-notes" } });
+
+    expect(again.status).toBe(422);
+    expect(await again.json()).toMatchObject({
+      message: "Repository creation failed.",
+      errors: [{ resource: "Repository", code: "custom", field: "name", message: "name already exists on this account" }],
+    });
+  });
+
+  it("hides a private repository from everyone but its owner", async () => {
+    const github = createFakeGitHub();
+    github.addUser({ login: "octo-member" });
+    github.addRepo({ owner: "octo-member", name: "my-notes", files: { "Secret.md": "shh\n" } });
+    const stranger = apiAs(github, "octo-stranger");
+
+    expect((await stranger("/repos/octo-member/my-notes")).status).toBe(404);
+    expect((await stranger("/repos/octo-member/my-notes/git/ref/heads/main")).status).toBe(404);
+  });
+
+  it("answers Git Data requests on an empty repository with 409", async () => {
+    const github = createFakeGitHub();
+    const api = apiAs(github, "octo-member");
+    await api("/user/repos", { method: "POST", body: { name: "empty" } });
+
+    const ref = await api("/repos/octo-member/empty/git/ref/heads/main");
+
+    expect(ref.status).toBe(409);
+    expect(await ref.json()).toMatchObject({ message: "Git Repository is empty." });
+  });
+});
+
+describe("fake GitHub: Git Data API", () => {
+  async function seeded() {
+    const github = createFakeGitHub();
+    const api = apiAs(github, "octo-member");
+    github.addRepo({ owner: "octo-member", name: "notes", files: { "Old.md": "old\n", "Keep/Me.md": "keep\n" } });
+    const ref = (await (await api("/repos/octo-member/notes/git/ref/heads/main")).json()) as { object: { sha: string } };
+    return { github, api, head: ref.object.sha };
+  }
+
+  it("hashes blobs and trees the way git does", async () => {
+    const { api } = await seeded();
+
+    // `echo "hello world" | git hash-object --stdin`, and git's empty tree.
+    const blob = await api("/repos/octo-member/notes/git/blobs", { method: "POST", body: { content: "hello world\n" } });
+    const encoded = await api("/repos/octo-member/notes/git/blobs", {
+      method: "POST",
+      body: { content: "aGVsbG8gd29ybGQK", encoding: "base64" },
+    });
+    const emptyTree = await api("/repos/octo-member/notes/git/trees", { method: "POST", body: { tree: [] } });
+
+    expect(blob.status).toBe(201);
+    expect(await blob.json()).toMatchObject({ sha: "3b18e512dba79e4c8300dd08aeb37f8e728b8dad" });
+    expect(await encoded.json()).toMatchObject({ sha: "3b18e512dba79e4c8300dd08aeb37f8e728b8dad" });
+    expect(await emptyTree.json()).toMatchObject({ sha: "4b825dc642cb6eb9a060e54bf8d69288fbee4904" });
+  });
+
+  it("commits several changes atomically: add, rename (add + delete) and edit in one tree", async () => {
+    const { github, api, head } = await seeded();
+    const commit = (await (await api(`/repos/octo-member/notes/git/commits/${head}`)).json()) as { tree: { sha: string } };
+
+    const tree = await api("/repos/octo-member/notes/git/trees", {
+      method: "POST",
+      body: {
+        base_tree: commit.tree.sha,
+        tree: [
+          { path: "New/Deep/Note.md", mode: "100644", type: "blob", content: "new\n" },
+          { path: "Renamed.md", mode: "100644", type: "blob", content: "old\n" },
+          { path: "Old.md", mode: "100644", type: "blob", sha: null },
+        ],
+      },
+    });
+    expect(tree.status).toBe(201);
+    const { sha: treeSha } = (await tree.json()) as { sha: string };
+    const created = await api("/repos/octo-member/notes/git/commits", {
+      method: "POST",
+      body: { message: 'Rename "Old" to "Renamed"', tree: treeSha, parents: [head] },
+    });
+    expect(created.status).toBe(201);
+    const { sha } = (await created.json()) as { sha: string };
+    const moved = await api("/repos/octo-member/notes/git/refs/heads/main", { method: "PATCH", body: { sha, force: false } });
+
+    expect(moved.status).toBe(200);
+    expect(await moved.json()).toMatchObject({ ref: "refs/heads/main", object: { sha, type: "commit" } });
+    expect(github.files("octo-member", "notes")).toEqual({
+      "Keep/Me.md": "keep\n",
+      "New/Deep/Note.md": "new\n",
+      "Renamed.md": "old\n",
+    });
+    expect(github.commits("octo-member", "notes")[0]).toMatchObject({
+      sha,
+      message: 'Rename "Old" to "Renamed"',
+      files: [
+        { path: "New/Deep/Note.md", status: "added" },
+        { path: "Old.md", status: "removed" },
+        { path: "Renamed.md", status: "added" },
+      ],
+    });
+  });
+
+  it("refuses to delete a file the base tree doesn't have", async () => {
+    const { api, head } = await seeded();
+    const commit = (await (await api(`/repos/octo-member/notes/git/commits/${head}`)).json()) as { tree: { sha: string } };
+
+    const tree = await api("/repos/octo-member/notes/git/trees", {
+      method: "POST",
+      body: { base_tree: commit.tree.sha, tree: [{ path: "Missing.md", mode: "100644", type: "blob", sha: null }] },
+    });
+
+    expect(tree.status).toBe(422);
+  });
+
+  it("lists a commit's tree recursively, by commit SHA or branch name", async () => {
+    const { api, head } = await seeded();
+
+    const bySha = await api(`/repos/octo-member/notes/git/trees/${head}?recursive=1`);
+    const byBranch = await api("/repos/octo-member/notes/git/trees/main?recursive=1");
+
+    const listing = (await bySha.json()) as { truncated: boolean; tree: { path: string; type: string; mode: string }[] };
+    expect(listing.truncated).toBe(false);
+    expect(listing.tree.map(({ path, type, mode }) => ({ path, type, mode }))).toEqual([
+      { path: "Keep", type: "tree", mode: "040000" },
+      { path: "Keep/Me.md", type: "blob", mode: "100644" },
+      { path: "Old.md", type: "blob", mode: "100644" },
+    ]);
+    expect(await byBranch.json()).toEqual(listing);
+  });
+
+  it("serves blobs as base64", async () => {
+    const { api } = await seeded();
+    const listing = (await (await api("/repos/octo-member/notes/git/trees/main?recursive=1")).json()) as {
+      tree: { path: string; sha: string }[];
+    };
+    const old = listing.tree.find((entry) => entry.path === "Old.md");
+
+    const blob = (await (await api(`/repos/octo-member/notes/git/blobs/${old?.sha}`)).json()) as {
+      content: string;
+      encoding: string;
+      size: number;
+    };
+
+    expect(blob).toMatchObject({ encoding: "base64", size: 4 });
+    expect(Buffer.from(blob.content, "base64").toString("utf8")).toBe("old\n");
+  });
+
+  it("refuses to move a branch to a commit that doesn't descend from it", async () => {
+    const { github, api, head } = await seeded();
+    const commit = (await (await api(`/repos/octo-member/notes/git/commits/${head}`)).json()) as { tree: { sha: string } };
+    github.commitFiles("octo-member", "notes", { message: "Edit on github.com", files: { "Old.md": "edited\n" } });
+    const stale = (await (
+      await api("/repos/octo-member/notes/git/commits", {
+        method: "POST",
+        body: { message: "Built on the old head", tree: commit.tree.sha, parents: [head] },
+      })
+    ).json()) as { sha: string };
+
+    const moved = await api("/repos/octo-member/notes/git/refs/heads/main", {
+      method: "PATCH",
+      body: { sha: stale.sha, force: false },
+    });
+
+    expect(moved.status).toBe(422);
+    expect(await moved.json()).toMatchObject({ message: "Update is not a fast forward" });
+    expect(github.files("octo-member", "notes")["Old.md"]).toBe("edited\n");
+  });
+
+  it("answers a head check with just the SHA, and 304 when it matches the ETag sent", async () => {
+    const { api, head } = await seeded();
+
+    const changed = await api("/repos/octo-member/notes/commits/main", { headers: { accept: "application/vnd.github.sha" } });
+    const unchanged = await api("/repos/octo-member/notes/commits/main", {
+      headers: { accept: "application/vnd.github.sha", "if-none-match": `"${head}"` },
+    });
+
+    expect(changed.status).toBe(200);
+    expect(await changed.text()).toBe(head);
+    expect(changed.headers.get("etag")).toBe(`"${head}"`);
+    expect(unchanged.status).toBe(304);
+  });
+
+  it("logs the requests it answers, so tests can see what GitHub was asked", async () => {
+    const { github, api, head } = await seeded();
+    const before = github.requests().length;
+
+    await api("/repos/octo-member/notes/commits/main", {
+      headers: { accept: "application/vnd.github.sha", "if-none-match": `"${head}"` },
+    });
+
+    expect(github.requests().slice(before)).toEqual([
+      { method: "GET", path: "/repos/octo-member/notes/commits/main", status: 304 },
+    ]);
+  });
+});

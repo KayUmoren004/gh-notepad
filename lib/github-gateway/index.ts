@@ -1,4 +1,6 @@
 import "server-only";
+import { apiCaller, errorMessage, GitHubError, record, text } from "./http";
+import { memberGitHub, type MemberGitHub } from "./notebooks";
 
 /**
  * The GitHub gateway: the only code that knows GitHub's URLs, headers, payload
@@ -7,7 +9,17 @@ import "server-only";
  * base URLs at the fake served over HTTP.
  */
 
-export const GITHUB_API_VERSION = "2026-03-10";
+export { GITHUB_API_VERSION, GitHubError } from "./http";
+export {
+  gitBlobSha,
+  PERSONAL_NOTEBOOK,
+  type CommitOutcome,
+  type FileChange,
+  type MemberGitHub,
+  type NotebookFile,
+  type NotebookLocation,
+  type RepositoryName,
+} from "./notebooks";
 
 export interface GitHubGatewayOptions {
   clientId: string;
@@ -36,16 +48,10 @@ export interface GitHubUser {
   avatarUrl: string;
 }
 
-/** A GitHub failure: an HTTP status, plus GitHub's OAuth error code when it sent one. */
-export class GitHubError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-  ) {
-    super(message);
-    this.name = "GitHubError";
-  }
+/** The signed-in member, as the session knows them: GitHub is never asked who they are again. */
+export interface MemberCredentials {
+  login: string;
+  accessToken: string;
 }
 
 export interface GitHubGateway {
@@ -60,6 +66,8 @@ export interface GitHubGateway {
   exchangeCode: (request: { code: string; redirectUri: string; codeVerifier: string }) => Promise<OAuthGrant>;
   /** The account a token belongs to. */
   getAuthenticatedUser: (accessToken: string) => Promise<GitHubUser>;
+  /** Notebook operations acting as `member`, whose login was resolved once, at sign-in. */
+  forMember: (member: MemberCredentials) => MemberGitHub;
 }
 
 /** The gateway configured from `GITHUB_*` environment variables. */
@@ -81,19 +89,6 @@ export function createGitHubGateway(options: GitHubGatewayOptions): GitHubGatewa
   const send = options.fetch ?? fetch;
   const apiBase = (options.apiBaseUrl ?? "https://api.github.com").replace(/\/+$/, "");
   const oauthBase = (options.oauthBaseUrl ?? "https://github.com").replace(/\/+$/, "");
-
-  async function api(path: string, accessToken: string): Promise<unknown> {
-    const response = await send(`${apiBase}${path}`, {
-      headers: {
-        accept: "application/vnd.github+json",
-        authorization: `Bearer ${accessToken}`,
-        "user-agent": "gh-notepad",
-        "x-github-api-version": GITHUB_API_VERSION,
-      },
-    });
-    if (!response.ok) throw new GitHubError(await errorMessage(response), response.status);
-    return response.json();
-  }
 
   return {
     authorizeUrl: ({ redirectUri, state, codeChallenge, scopes }) => {
@@ -146,11 +141,13 @@ export function createGitHubGateway(options: GitHubGatewayOptions): GitHubGatewa
     },
 
     getAuthenticatedUser: async (accessToken) => {
-      const body = record(await api("/user", accessToken));
+      const body = record(await (await apiCaller(send, apiBase, accessToken)("/user")).json());
       const login = text(body.login);
       if (!login || typeof body.id !== "number") throw new GitHubError("Unexpected /user response", 502);
       return { login, id: body.id, name: text(body.name) ?? null, avatarUrl: text(body.avatar_url) ?? "" };
     },
+
+    forMember: ({ login, accessToken }) => memberGitHub(apiCaller(send, apiBase, accessToken), login),
   };
 }
 
@@ -160,24 +157,6 @@ function required(env: Record<string, string | undefined>, name: string): string
   return value;
 }
 
-function record(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-
-function text(value: unknown): string | undefined {
-  return typeof value === "string" && value !== "" ? value : undefined;
-}
-
 function seconds(value: unknown, now: number): number | undefined {
   return typeof value === "number" ? now + value * 1000 : undefined;
-}
-
-async function errorMessage(response: Response): Promise<string> {
-  try {
-    const message = record(await response.json()).message;
-    if (typeof message === "string") return message;
-  } catch {
-    // Not JSON; fall through to the status text.
-  }
-  return `GitHub answered ${response.status} ${response.statusText}`.trim();
 }

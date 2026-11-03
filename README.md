@@ -27,6 +27,12 @@ npm run dev        # http://localhost:3000, with the variables above in .env.loc
 
 To work without a real OAuth App, run the app against the fake GitHub: see [`test/fake-github/README.md`](test/fake-github/README.md#over-http-playwright-local-development).
 
+## Installable app
+
+Production builds register a service worker (`app/sw.ts`, bundled with esbuild by `@serwist/turbopack` in `app/serwist/[path]/route.ts` and served at `/serwist/sw.js`). It precaches the build's static assets and keeps the signed-in `/notes` shell, so the app opens with no network after one online visit; signing out forgets that shell. API routes (`/api/*`) never pass through its caches. Each new deployment waits behind a quiet "Update available" prompt until the member chooses Reload.
+
+`npm run dev` runs without the service worker and unregisters one left behind by a local production build. The manifest is `app/manifest.ts`; `node scripts/generate-icons.mjs` redraws every icon from the landing page's wordmark.
+
 ## Checks
 
 ```bash

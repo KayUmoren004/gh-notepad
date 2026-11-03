@@ -12,6 +12,9 @@ export default defineConfig({
   use: {
     baseURL: appUrl,
     trace: "retain-on-failure",
+    // The production build registers a service worker. Specs that test it opt in
+    // with `test.use({ serviceWorkers: "allow" })`; everything else runs without one.
+    serviceWorkers: "block",
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },

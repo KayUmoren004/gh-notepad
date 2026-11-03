@@ -1,2 +1,10 @@
 export { createFakeGitHub, type FakeGitHub, type FakeGitHubOptions } from "./fake-github";
-export type { FakeOAuthApp, FakeUser, UserSeed } from "./state";
+export type {
+  FakeCommitSummary,
+  FakeOAuthApp,
+  FakeRepo,
+  FakeRequest,
+  FakeUser,
+  RepoSeed,
+  UserSeed,
+} from "./state";

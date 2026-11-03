@@ -98,3 +98,15 @@ test("the app shell fills the dynamic viewport", async ({ page, signInAs }) => {
   ]);
   expect(shell).toBe(viewport);
 });
+
+test("specs run without the service worker unless they opt in", async ({ page }) => {
+  await page.goto("/");
+
+  // playwright.config.ts blocks it; offline.spec.ts and install.spec.ts allow it.
+  const registrations = await page.evaluate(async () => {
+    await navigator.serviceWorker.register("/serwist/sw.js").catch(() => undefined);
+    return (await navigator.serviceWorker.getRegistrations()).length;
+  });
+  expect(registrations).toBe(0);
+  expect(await page.evaluate(() => navigator.serviceWorker.controller)).toBeNull();
+});
