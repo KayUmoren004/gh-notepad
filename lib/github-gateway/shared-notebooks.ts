@@ -64,6 +64,8 @@ export type InviteOutcome =
 export interface SharedNotebooksGitHub {
   /** Every notebook the member owns or collaborates on: repositories tagged with the notebook topic, plus the personal notebook. */
   listNotebooks: () => Promise<Notebook[]>;
+  /** The notebook at `owner/repo` if the member can open it and it is one (tagged, or their personal notebook); `null` otherwise. */
+  findNotebook: (notebook: NotebookRepository) => Promise<Notebook | null>;
   /** A private repository in the member's account, with an initial commit, tagged as a notebook. */
   createSharedNotebook: (name: string) => Promise<CreateNotebookOutcome>;
   /** The owner and every collaborator. Any collaborator may ask. */
@@ -159,6 +161,16 @@ export function sharedNotebooksGitHub(api: ApiCall, login: string): SharedNotebo
     listNotebooks: async () => {
       const repos = await all("/user/repos?affiliation=owner,collaborator");
       return repos.map(notebookFrom).filter((notebook) => notebook !== null);
+    },
+
+    findNotebook: async (notebook) => {
+      try {
+        // A private repository the member can't open answers 404, as on GitHub: no difference from one that doesn't exist.
+        return notebookFrom(await (await api(repoPath(notebook))).json());
+      } catch (error) {
+        if (error instanceof GitHubError && error.status === 404) return null;
+        throw error;
+      }
     },
 
     createSharedNotebook: async (name) => {

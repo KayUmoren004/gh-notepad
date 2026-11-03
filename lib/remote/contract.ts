@@ -111,4 +111,7 @@ export const routes = {
   personalNotebook: "/api/notebooks/personal",
   notebook: ({ owner, repo }: { owner: string; repo: string }) =>
     `/api/notebooks/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+  /** The shared-notebook routes (`lib/shared-notebooks-api`): the member's notebooks, and their invitations. */
+  notebooks: "/api/notebooks",
+  invitations: "/api/invitations",
 };

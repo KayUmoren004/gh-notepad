@@ -14,6 +14,20 @@ import {
   type RemoteVersion,
   type VersionsResponse,
 } from "./contract";
+// Type-only: the shared-notebook routes' reply shapes, erased at build time, so nothing server-only is loaded.
+import type {
+  Collaborator,
+  CollaboratorsResponse,
+  InvitationsResponse,
+  InviteResponse,
+  Notebook as RemoteNotebook,
+  NotebookInvitation,
+  NotebookRepository,
+  NotebookResponse,
+  NotebooksResponse,
+} from "@/lib/shared-notebooks-api";
+
+export type { Collaborator, InviteResponse, NotebookInvitation, NotebookRepository, RemoteNotebook };
 
 /**
  * Why a remote call failed, in the terms sync acts on:
@@ -32,6 +46,8 @@ export class RemoteError extends Error {
     readonly kind: RemoteErrorKind,
     message: string,
     readonly retryAfterMs?: number,
+    /** The route's own error code (`name_taken`, `no_such_user`, `forbidden`, …), for the UI to tell apart; `message` is for the member. */
+    readonly code?: string,
   ) {
     super(message);
     this.name = "RemoteError";
@@ -60,6 +76,26 @@ export interface Remote {
   ) => Promise<CommitResult>;
   /** Stores an attachment's bytes on GitHub as a blob, to name in a later commit; returns its SHA. */
   storeAttachment: (notebook: NotebookRef, attachment: { type: string; bytes: Blob }) => Promise<string>;
+
+  /** Every notebook the member owns or collaborates on (the personal notebook among them once it exists). */
+  listNotebooks: () => Promise<RemoteNotebook[]>;
+  /** Creates a shared notebook named `name` in the member's account; fails with code `name_taken` when they have a repository by that name. */
+  createNotebook: (name: string) => Promise<RemoteNotebook>;
+  /** The owner and every collaborator of a shared notebook. */
+  listCollaborators: (notebook: NotebookRepository) => Promise<Collaborator[]>;
+  /** Takes a collaborator's access away; the owner only. */
+  removeCollaborator: (notebook: NotebookRepository, login: string) => Promise<void>;
+  /** The notebook's open invitations; the owner only. */
+  listInvitations: (notebook: NotebookRepository) => Promise<NotebookInvitation[]>;
+  /** Invites a GitHub user to collaborate; fails with code `no_such_user` when GitHub has no such account. */
+  invite: (notebook: NotebookRepository, username: string) => Promise<InviteResponse>;
+  cancelInvitation: (notebook: NotebookRepository, invitationId: number) => Promise<void>;
+  /** Gives up the member's own access to a notebook someone else owns. */
+  leaveNotebook: (notebook: NotebookRepository) => Promise<void>;
+  /** Open invitations addressed to the member. */
+  myInvitations: () => Promise<NotebookInvitation[]>;
+  acceptInvitation: (invitationId: number) => Promise<void>;
+
   /** Every version of the file at `path` on the branch, newest first, followed back through renames and moves. */
   versions: (notebook: NotebookRef, path: string) => Promise<RemoteVersion[]>;
   /** The file's text at `commit`, or `null` if that commit has no file at `path`. */
@@ -75,7 +111,7 @@ export interface RemoteOptions {
 export function createRemote({ baseUrl = "", fetch: send = (...args) => fetch(...args) }: RemoteOptions = {}): Remote {
   async function call<T>(
     path: string,
-    init: { method?: "GET" | "POST"; body?: unknown; bytes?: { type: string; blob: Blob } } = {},
+    init: { method?: "GET" | "POST" | "DELETE"; body?: unknown; bytes?: { type: string; blob: Blob } } = {},
   ): Promise<T> {
     let response: Response;
     try {
@@ -93,9 +129,13 @@ export function createRemote({ baseUrl = "", fetch: send = (...args) => fetch(..
     } catch (error) {
       throw new RemoteError("offline", error instanceof Error ? error.message : "The network is unavailable");
     }
+    if (response.status === 204) return undefined as T;
     if (response.ok) return (await response.json()) as T;
     throw await failure(response);
   }
+
+  const segment = encodeURIComponent;
+  const sharedNotebook = (notebook: NotebookRepository) => routes.notebook(notebook);
 
   return {
     personalNotebook: () => call<NotebookRef>(routes.personalNotebook, { method: "POST" }),
@@ -147,6 +187,32 @@ export function createRemote({ baseUrl = "", fetch: send = (...args) => fetch(..
         })
       ).sha,
 
+    listNotebooks: async () => (await call<NotebooksResponse>(routes.notebooks)).notebooks,
+
+    createNotebook: async (name) =>
+      (await call<NotebookResponse>(routes.notebooks, { method: "POST", body: { name } })).notebook,
+
+    listCollaborators: async (notebook) =>
+      (await call<CollaboratorsResponse>(`${sharedNotebook(notebook)}/collaborators`)).collaborators,
+
+    removeCollaborator: (notebook, login) =>
+      call<void>(`${sharedNotebook(notebook)}/collaborators/${segment(login)}`, { method: "DELETE" }),
+
+    listInvitations: async (notebook) =>
+      (await call<InvitationsResponse>(`${sharedNotebook(notebook)}/invitations`)).invitations,
+
+    invite: (notebook, username) =>
+      call<InviteResponse>(`${sharedNotebook(notebook)}/invitations`, { method: "POST", body: { username } }),
+
+    cancelInvitation: (notebook, invitationId) =>
+      call<void>(`${sharedNotebook(notebook)}/invitations/${invitationId}`, { method: "DELETE" }),
+
+    leaveNotebook: (notebook) => call<void>(`${sharedNotebook(notebook)}/leave`, { method: "POST" }),
+
+    myInvitations: async () => (await call<InvitationsResponse>(routes.invitations)).invitations,
+
+    acceptInvitation: (invitationId) => call<void>(`${routes.invitations}/${invitationId}/accept`, { method: "POST" }),
+
     versions: async (notebook, path) =>
       (
         await call<VersionsResponse>(
@@ -169,7 +235,7 @@ class BranchMoved extends Error {}
 class NotFound extends Error {}
 
 async function failure(response: Response): Promise<Error> {
-  const body = (await response.json().catch(() => ({}))) as Partial<ApiErrorBody>;
+  const body = (await response.json().catch(() => ({}))) as Partial<ApiErrorBody> & { error?: string };
   const message = body.message ?? `The notebook service answered ${response.status}`;
   switch (body.error) {
     case "branch_moved":
@@ -185,6 +251,6 @@ async function failure(response: Response): Promise<Error> {
     default:
       // Hosting that caps request bodies answers 413 itself, before the route runs, with no body of ours.
       if (response.status === 413) return new RemoteError("refused", body.message ?? "The image is too big to store");
-      return new RemoteError(response.status === 401 ? "signed-out" : "failed", message);
+      return new RemoteError(response.status === 401 ? "signed-out" : "failed", message, undefined, body.error);
   }
 }

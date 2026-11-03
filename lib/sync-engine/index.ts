@@ -25,6 +25,12 @@
  *   (`attachments.ts`). One the deployment refuses for good (over its size
  *   limit) is marked failed in the store and left out, so the notes still
  *   sync; the idle status counts them (`failedAttachments`).
+ * - Every notebook the member can open is synced, the personal one first:
+ *   the list is asked for on start, every few minutes, and on demand
+ *   (`refreshNotebooks`, after creating a notebook or accepting an
+ *   invitation). A notebook that appears is located and synced from then on;
+ *   one the member left or was removed from is forgotten from the device,
+ *   notes and all. One notebook failing doesn't hold up the rest.
  */
 export {
   createSyncEngine,

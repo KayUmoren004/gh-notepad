@@ -33,6 +33,7 @@ export {
   type UnsyncedNote,
 } from "./device-data";
 export {
+  notebookId,
   personalNotebookId,
   type Account,
   type AgreedVersion,

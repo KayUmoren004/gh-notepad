@@ -1,4 +1,4 @@
-import type { DeviceStore } from "@/lib/device-store";
+import { notebookId, type DeviceStore } from "@/lib/device-store";
 import { fallbackNoteId, isNotePath, isV1Path, titleOfPath } from "@/lib/notebook-format";
 import { RemoteError, type NotebookRef, type Remote, type RemoteFile } from "@/lib/remote";
 import { attachmentUnits, stageAttachments, withAttachments } from "./attachments";
@@ -54,6 +54,8 @@ export interface SyncEngineOptions {
   maxWaitMs?: number;
   /** Pull interval while the app is visible. Default 30 s. */
   pollMs?: number;
+  /** How long the member's list of notebooks is trusted before a sync asks GitHub for it again. Default 5 min. */
+  listNotebooksMs?: number;
   /** Changes per commit; a larger push is split into several. Default 1,000, the notebook routes' limit. */
   maxChangesPerCommit?: number;
 }
@@ -82,6 +84,12 @@ export interface SyncEngine {
   /** `sync()` for triggers that don't wait: switching notes, focus, reconnecting. */
   requestSync: () => void;
   /**
+   * Asks GitHub which notebooks the member can open before syncing, instead of
+   * waiting for the periodic look: after creating one or accepting an
+   * invitation. Resolves like `sync()`.
+   */
+  refreshNotebooks: () => Promise<void>;
+  /**
    * Starts the automatic triggers: a pause after typing, periodic pulls, retries
    * with back-off and, in a browser, focus, tab hide and reconnect.
    */
@@ -106,6 +114,7 @@ export function createSyncEngine({
   idleMs = 3_000,
   maxWaitMs = 20_000,
   pollMs = 30_000,
+  listNotebooksMs = 5 * 60_000,
   maxChangesPerCommit = 1000,
 }: SyncEngineOptions): SyncEngine {
   const listeners = new Set<() => void>();
@@ -114,6 +123,9 @@ export function createSyncEngine({
   let followUp: Promise<void> | null = null;
   let started = false;
   let failures = 0;
+  /** When the member's notebooks were last listed, and whether the next sync must list them whatever the time. */
+  let notebooksListedAt: number | null = null;
+  let listDue = false;
   /** v1 conversions found by a pull, waiting for the push that commits them, by notebook. */
   const migrations = new Map<string, PendingMigration>();
   let migrated: MigrationReport | null = null;
@@ -162,7 +174,10 @@ export function createSyncEngine({
     let outcome: SyncStatus;
     let failure: unknown;
     try {
-      await syncNotebook(store.personalNotebook);
+      if (listDue || notebooksListedAt === null || timers.now() - notebooksListedAt >= listNotebooksMs) {
+        await listNotebooks();
+      }
+      await syncNotebooks();
       failures = 0;
       const failed = store.getState().failedAttachments.length;
       outcome = { state: "idle", lastSyncedAt: timers.now(), ...(failed > 0 ? { failedAttachments: failed } : {}) };
@@ -193,9 +208,53 @@ export function createSyncEngine({
     return { state: "failed", message, retryAt: started ? timers.now() + wait : null };
   }
 
+  // ------------------------------------------------------------ Every notebook the member can open
+
+  /**
+   * Brings the device's notebooks in line with GitHub's answer: a notebook the
+   * member can now open is located (and synced from here on); one they can no
+   * longer open (they left it, or were removed) is forgotten, notes and all.
+   * The personal notebook is never forgotten: it is created if missing instead.
+   */
+  async function listNotebooks() {
+    // Cleared before asking, so a refresh asked for meanwhile asks again.
+    listDue = false;
+    const notebooks = await remote.listNotebooks();
+    notebooksListedAt = timers.now();
+    const open = new Set<string>();
+    for (const notebook of notebooks) {
+      const id = notebookId(notebook.owner, notebook.repo);
+      open.add(id);
+      store.sync.locate(id, { owner: notebook.owner, repo: notebook.repo, branch: notebook.branch });
+    }
+    for (const id of store.getState().notebooks.keys()) {
+      if (id !== store.personalNotebook && !open.has(id)) store.forgetNotebook(id);
+    }
+  }
+
+  /** Syncs the personal notebook, then every shared one. A notebook that fails doesn't hold up the others. */
+  async function syncNotebooks() {
+    const shared = [...store.getState().notebooks.keys()].filter((id) => id !== store.personalNotebook).sort();
+    let failure: unknown;
+    for (const id of [store.personalNotebook, ...shared]) {
+      // Forgotten since the list was read (the member left it meanwhile).
+      if (id !== store.personalNotebook && !store.getState().notebooks.has(id)) continue;
+      try {
+        await syncNotebook(id);
+      } catch (error) {
+        // Nothing else will work either without a session or a network: stop here.
+        if (error instanceof RemoteError && (error.kind === "signed-out" || error.kind === "offline")) throw error;
+        failure ??= error;
+      }
+    }
+    if (failure !== undefined) throw failure;
+  }
+
+  // ------------------------------------------------------------ One notebook
+
   async function syncNotebook(id: string) {
     let notebook = store.sync.notebook(id);
-    if (!notebook?.branch) {
+    if (!notebook?.branch && id === store.personalNotebook) {
       store.sync.locate(id, await remote.personalNotebook());
       notebook = store.sync.notebook(id);
     }
@@ -353,6 +412,10 @@ export function createSyncEngine({
     },
     sync,
     requestSync,
+    refreshNotebooks: () => {
+      listDue = true;
+      return sync();
+    },
 
     start: () => {
       if (started) return;
