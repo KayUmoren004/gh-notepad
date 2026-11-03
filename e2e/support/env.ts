@@ -22,6 +22,16 @@ export const v1Members: Record<string, string> = {
   phone: "octo-v1-phone",
 };
 
+/**
+ * Two allowed members per Playwright project who share a browser in the sign-out
+ * flows, so their notebooks are theirs alone. Neither login starts with the
+ * other's: the fake's account chooser is searched by name.
+ */
+export const signOutMembers: Record<string, { first: string; second: string }> = {
+  desktop: { first: "octo-signout-one-desktop", second: "octo-signout-two-desktop" },
+  phone: { first: "octo-signout-one-phone", second: "octo-signout-two-phone" },
+};
+
 const oauthApp = {
   GITHUB_CLIENT_ID: "e2e-client-id",
   GITHUB_CLIENT_SECRET: "e2e-client-secret",
@@ -40,7 +50,11 @@ export const appEnv = {
   NEXT_PUBLIC_APP_URL: appUrl,
   SESSION_SECRET: "e2e-session-secret-that-is-at-least-32-characters",
   OWNER_GITHUB_USER: members.owner,
-  ALLOWED_GITHUB_USERS: [members.allowed, ...Object.values(v1Members)].join(","),
+  ALLOWED_GITHUB_USERS: [
+    members.allowed,
+    ...Object.values(v1Members),
+    ...Object.values(signOutMembers).flatMap(({ first, second }) => [first, second]),
+  ].join(","),
   GITHUB_API_BASE_URL: fakeGitHubUrl,
   GITHUB_OAUTH_BASE_URL: fakeGitHubUrl,
   // Serves the component pages under /dev (the rich text mode harness) from the production build.
