@@ -10,6 +10,9 @@
  *   there first, pull and retry.
  * - Typing during a sync is never overwritten: a push only marks a note synced
  *   if its text is still the text that was pushed.
+ * - Attachments inserted on the device are stored on GitHub as blobs first,
+ *   then named in the same commit as the notes that embed them
+ *   (`attachments.ts`).
  */
 export {
   createSyncEngine,

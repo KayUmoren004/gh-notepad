@@ -1,6 +1,7 @@
 import type { DeviceStore } from "@/lib/device-store";
 import { fallbackNoteId, isNotePath, isV1Path } from "@/lib/notebook-format";
 import { RemoteError, type NotebookRef, type Remote, type RemoteFile } from "@/lib/remote";
+import { stageAttachments, withAttachments } from "./attachments";
 import { planMigration, type MigrationReport, type PendingMigration } from "./migration";
 import { planPush } from "./push";
 import { reconcile, type RemoteNote } from "./reconcile";
@@ -204,20 +205,23 @@ export function createSyncEngine({
     const migration = migrations.get(id);
     const base = migration?.base ?? store.sync.notebook(id)?.head;
     const dirty = store.sync.records(id).filter((record) => record.dirty);
-    if (dirty.length === 0 && !migration) return "clean";
+    // Attachments inserted on this device go into the same commit as the notes that embed them (ADR 0003).
+    const attachments = await stageAttachments(store, remote, id, ref);
+    if (dirty.length === 0 && !migration && attachments.paths.length === 0) return "clean";
     if (!base) throw new Error("The notebook has no commits yet");
 
     const plan = planPush(dirty);
     const result = await remote.commit(ref, {
       base,
-      message: migration?.message ?? plan.message,
-      changes: [...plan.changes, ...(migration?.changes ?? [])],
+      message: withAttachments(migration?.message ?? plan.message, dirty.length, attachments),
+      changes: [...plan.changes, ...attachments.changes, ...(migration?.changes ?? [])],
     });
     if (result.status === "branch-moved") return "branch-moved";
     if (migration) {
       migrations.delete(id);
       migrated = { notebook: id, commit: result.commit, skipped: migration.skipped };
     }
+    store.sync.applyAttachmentPush(id, attachments.paths);
     store.sync.applyPush(
       id,
       result.commit,
