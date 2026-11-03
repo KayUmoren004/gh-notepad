@@ -35,6 +35,20 @@ test("a signed-out visitor learns what the notepad is and how to get in", async 
   await expect(page.getByText("This notepad is invite-only", { exact: false }).first()).toBeVisible();
 });
 
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 1440, height: 900 },
+]) {
+  test(`at ${viewport.width} px the page fits the screen and opens on sign-in and the preview`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
+    await expect(page.getByRole("link", { name: "Sign in with GitHub" })).toBeInViewport({ ratio: 1 });
+    await expect(page.getByRole("img", { name: /^Preview of the notepad/ })).toBeInViewport();
+  });
+}
+
 test("the landing page describes itself to search engines and link previews", async ({ page, request }) => {
   await page.goto("/");
   const content = (selector: string) => page.locator(selector).getAttribute("content");
