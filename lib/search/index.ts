@@ -16,5 +16,5 @@
  *   markers removed and long lines cut to a window around the match, and a
  *   deep path shortened to its end.
  */
-export { createNoteIndex, type NoteIndex, type SearchResult, type SearchableNote } from "./note-index";
+export { createNoteIndex, notePath, type NoteIndex, type SearchResult, type SearchableNote } from "./note-index";
 export { highlight, shortPath, snippetOf, tagSegments, type Segment } from "./snippet";

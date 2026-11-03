@@ -60,7 +60,10 @@ const sameText = (a: SearchableNote, b: SearchableNote) =>
   a.tags.length === b.tags.length &&
   a.tags.every((tag, index) => tag === b.tags[index]);
 
-const pathOf = (note: SearchableNote) => [notebookName(note.notebook), ...(note.folder ? note.folder.split("/") : [])];
+/** Where a note is: its notebook's name, then its folders. */
+export function notePath(note: Pick<SearchableNote, "notebook" | "folder">): string[] {
+  return [notebookName(note.notebook), ...(note.folder ? note.folder.split("/") : [])];
+}
 
 /** The terms of a result that matched in `field`. */
 function termsIn(match: Record<string, string[]>, field: Field): string[] {
@@ -105,7 +108,7 @@ export function createNoteIndex(): NoteIndex {
       folder: note.folder,
       title: note.title,
       kind,
-      path: pathOf(note),
+      path: notePath(note),
       titleSegments: highlight(note.title, terms),
       snippet,
     };

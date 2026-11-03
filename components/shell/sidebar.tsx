@@ -23,6 +23,8 @@ export interface SidebarProps {
   /** Opens a note. A keyboard activation (`event.detail === 0`) is `instant`: no push animation. */
   onOpen: (id: string, options: { instant: boolean }) => void;
   onCreate: () => void;
+  /** Opens the command palette; without it the Search action is disabled. */
+  onSearch?: () => void;
   className?: string;
 }
 
@@ -41,7 +43,7 @@ function parseKeys(stored: string | null): string[] {
  * and the notebook tree. On a phone it is the home screen; on desktop it
  * sits beside the editor and can be collapsed.
  */
-export function Sidebar({ member, openId, onOpen, onCreate, className }: SidebarProps) {
+export function Sidebar({ member, openId, onOpen, onCreate, onSearch, className }: SidebarProps) {
   const sidebar = useSidebar();
   const trees = useNotebookTrees();
   const recent = useRecentNotes(RECENT);
@@ -99,8 +101,7 @@ export function Sidebar({ member, openId, onOpen, onCreate, className }: Sidebar
           <SidebarAction icon={SquarePen} hint={`${hint}N`} onClick={onCreate}>
             New note
           </SidebarAction>
-          {/* TODO(#10): search opens the command palette; until that ticket lands the slot is disabled. */}
-          <SidebarAction icon={Search} hint={`${hint}K`} disabled>
+          <SidebarAction icon={Search} hint={`${hint}K`} disabled={!onSearch} onClick={onSearch}>
             Search
           </SidebarAction>
         </div>

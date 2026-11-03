@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { usePaletteAction } from "@/components/palette";
 import { RichTextMode, type RichTextModeHandle } from "@/components/rich-text-mode";
 import { TopBar } from "@/components/shell";
 import { ModeToggle, SourceMode } from "@/components/source-mode";
@@ -87,6 +88,14 @@ export function NoteEditor({
       if (body.current === handle) handle.placeCursor(block, offset, pending.focus);
     });
   }, []);
+
+  // The palette lists the switch to the other mode while this note is open.
+  usePaletteAction({
+    id: "switch-mode",
+    label: mode === "source" ? "Switch to rich text mode" : "Switch to source mode",
+    keywords: "toggle editing markdown",
+    run: () => switchMode(mode === "source" ? "rich-text" : "source"),
+  });
 
   if (!note) return null;
 
