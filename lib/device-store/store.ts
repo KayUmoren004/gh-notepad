@@ -86,8 +86,12 @@ export interface SyncLedger {
   /** Records where a notebook lives on GitHub, once it has been found or created. */
   locate: (id: string, location: NotebookLocation) => void;
   records: (notebook: string) => SyncRecord[];
-  /** Applies a pull in one step: remote versions, agreed bases and the new head commit. */
-  applyPull: (notebook: string, head: string, changes: readonly PullChange[]) => void;
+  /**
+   * Applies a pull in one step: remote versions, agreed bases and the new head
+   * commit. A `null` head leaves the head as it was, for a pull whose outcome
+   * only counts once a push commits it (converting v1 notes).
+   */
+  applyPull: (notebook: string, head: string | null, changes: readonly PullChange[]) => void;
   /**
    * Records a successful push: each pushed version becomes the agreed base.
    * Text typed while the push was in flight stays, and keeps the note unsynced.
@@ -317,7 +321,7 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
           entries.set(change.id, { row, persisted: 0, parsed: parse(row.text) });
         }
       }
-      setHead(notebook, head);
+      if (head !== null) setHead(notebook, head);
       changed(changes.map((change) => change.id));
     },
 

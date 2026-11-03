@@ -1,6 +1,7 @@
 import type { DeviceStore } from "@/lib/device-store";
-import { fallbackNoteId, isNotePath } from "@/lib/notebook-format";
-import { RemoteError, type NotebookRef, type Remote } from "@/lib/remote";
+import { fallbackNoteId, isNotePath, isV1Path } from "@/lib/notebook-format";
+import { RemoteError, type NotebookRef, type Remote, type RemoteFile } from "@/lib/remote";
+import { planMigration, type MigrationReport, type PendingMigration } from "./migration";
 import { planPush } from "./push";
 import { reconcile, type RemoteNote } from "./reconcile";
 
@@ -75,6 +76,9 @@ export function createSyncEngine({
   let followUp: Promise<void> | null = null;
   let started = false;
   let failures = 0;
+  /** v1 conversions found by a pull, waiting for the push that commits them, by notebook. */
+  const migrations = new Map<string, PendingMigration>();
+  let migrated: MigrationReport | null = null;
 
   let idleTimer: unknown;
   let firstPendingEdit: number | null = null;
@@ -164,34 +168,49 @@ export function createSyncEngine({
     const head = await remote.head(ref, store.sync.notebook(id)?.head ?? null);
     if (!head.changed) return;
 
-    const files = (await remote.files(ref, head.commit)).filter((file) => isNotePath(file.path));
+    const tree = await remote.files(ref, head.commit);
+    const files = tree.filter((file) => isNotePath(file.path));
+    const v1 = tree.filter((file) => isV1Path(file.path));
     // Only blobs this device hasn't seen are fetched.
     const known = new Map<string, string>();
     for (const record of store.sync.records(id)) if (record.base) known.set(record.base.sha, record.base.text);
     const fetched = await remote.blobs(
       ref,
-      files.filter((file) => !known.has(file.sha)).map((file) => file.sha),
+      [...files, ...v1].filter((file) => !known.has(file.sha)).map((file) => file.sha),
     );
-    const notes: RemoteNote[] = files.map((file) => ({
-      ...file,
-      text: known.get(file.sha) ?? fetched.get(file.sha) ?? "",
-    }));
+    const withText = (file: RemoteFile) => ({ ...file, text: known.get(file.sha) ?? fetched.get(file.sha) ?? "" });
+    const notes: RemoteNote[] = files.map(withText);
 
     // Decided and applied in one step: no edit can land in between.
+    const records = store.sync.records(id);
     const ids = { fallback: (path: string) => fallbackNoteId(id, path), random: () => crypto.randomUUID() };
-    store.sync.applyPull(id, head.commit, reconcile(store.sync.records(id), notes, ids));
+    const changes = reconcile(records, notes, ids);
+    const migration = v1.length > 0 ? planMigration(head.commit, v1.map(withText), { records, pulled: changes, remote: notes }) : null;
+    if (migration) migrations.set(id, migration);
+    else migrations.delete(id);
+    // Until the conversion is committed this head counts as unseen, so a reload before then converts again.
+    store.sync.applyPull(id, migration ? null : head.commit, migration ? [...changes, ...migration.notes] : changes);
   }
 
   /** Pushes every unsynced note in one commit on top of the head this device last saw. */
   async function push(id: string, ref: NotebookRef): Promise<"clean" | "pushed" | "branch-moved"> {
-    const base = store.sync.notebook(id)?.head;
+    const migration = migrations.get(id);
+    const base = migration?.base ?? store.sync.notebook(id)?.head;
     const dirty = store.sync.records(id).filter((record) => record.dirty);
-    if (dirty.length === 0) return "clean";
+    if (dirty.length === 0 && !migration) return "clean";
     if (!base) throw new Error("The notebook has no commits yet");
 
     const plan = planPush(dirty);
-    const result = await remote.commit(ref, { base, message: plan.message, changes: plan.changes });
+    const result = await remote.commit(ref, {
+      base,
+      message: migration?.message ?? plan.message,
+      changes: [...plan.changes, ...(migration?.changes ?? [])],
+    });
     if (result.status === "branch-moved") return "branch-moved";
+    if (migration) {
+      migrations.delete(id);
+      migrated = { notebook: id, commit: result.commit, skipped: migration.skipped };
+    }
     store.sync.applyPush(
       id,
       result.commit,
