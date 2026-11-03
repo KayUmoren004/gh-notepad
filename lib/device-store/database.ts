@@ -45,6 +45,29 @@ export interface AttachmentRow {
   sha: string | null;
   /** Committed to the notebook. */
   synced: boolean;
+  /**
+   * Why the notebook refused it (over the deployment's size limit), once a
+   * push was turned away: kept out of every push since, until removed.
+   */
+  failed?: string;
+}
+
+/** A note's version list as last fetched from its notebook, by the note's path. */
+export interface HistoryRow {
+  notebook: string;
+  path: string;
+  /** The notebook's head commit the list was fetched at. */
+  head: string;
+  versions: { commit: string; path: string; message: string; date: string; author: string }[];
+}
+
+/** The text of one version of a note this device has looked at. Commits never change, so it never expires. */
+export interface VersionRow {
+  notebook: string;
+  commit: string;
+  /** The note's path at that commit. */
+  path: string;
+  text: string;
 }
 
 export interface DatabaseOptions {
@@ -62,11 +85,20 @@ export class NotepadDatabase extends Dexie {
   notes!: Table<NoteRow, string>;
   notebooks!: Table<NotebookRow, string>;
   attachments!: Table<AttachmentRow, [string, string]>;
+  histories!: Table<HistoryRow, [string, string]>;
+  versions!: Table<VersionRow, [string, string, string]>;
 
   constructor(accountId: number, options: DatabaseOptions = {}) {
     super(databaseName(accountId), options);
     this.version(1).stores({ notes: "key, notebook", notebooks: "id" });
     this.version(2).stores({ notes: "key, notebook", notebooks: "id", attachments: "[notebook+path], notebook" });
+    this.version(3).stores({
+      notes: "key, notebook",
+      notebooks: "id",
+      attachments: "[notebook+path], notebook",
+      histories: "[notebook+path]",
+      versions: "[notebook+commit+path]",
+    });
   }
 }
 

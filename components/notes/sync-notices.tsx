@@ -4,15 +4,19 @@ import { X } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { buttonVariants } from "@/components/ui/button-variants";
+import { attachmentLink } from "@/lib/attachments";
+import type { FailedAttachment } from "@/lib/device-store";
 import type { Conflict } from "@/lib/sync-engine";
 import { cn } from "@/lib/utils";
-import { useNotepad, useSyncStatus } from "./notepad-provider";
+import { useFailedAttachments, useNotepad, useNotes, useSyncStatus } from "./notepad-provider";
 
 /**
  * What sync needs the member to know, wherever the layout puts it: the session
  * ended and they must sign in again to keep syncing (their notes stay on the
  * device meanwhile), notes that couldn't be merged and got a conflict copy,
- * and a quiet line while the device is offline or a sync is being retried.
+ * images the notebook refused (over the deployment's size limit) that the
+ * member can remove, and a quiet line while the device is offline or a sync
+ * is being retried.
  */
 export function SyncNotices({
   className,
@@ -22,16 +26,29 @@ export function SyncNotices({
   /** Opens a note, for the conflict copy; without it the notice only says where the copy is. */
   onOpen?: (noteId: string) => void;
 }) {
-  const { engine } = useNotepad();
+  const { store, engine } = useNotepad();
   const status = useSyncStatus();
   const conflicts = useSyncExternalStore(engine.subscribe, engine.getConflicts, engine.getConflicts);
-  if (status.state !== "signed-out" && status.state !== "offline" && status.state !== "failed" && conflicts.length === 0) {
+  const failedAttachments = useFailedAttachments();
+  if (
+    status.state !== "signed-out" &&
+    status.state !== "offline" &&
+    status.state !== "failed" &&
+    conflicts.length === 0 &&
+    failedAttachments.length === 0
+  ) {
     return null;
   }
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       {status.state === "signed-out" && <SignInAgain />}
+      {failedAttachments.length > 0 && (
+        <FailedAttachmentsNotice
+          failed={failedAttachments}
+          onRemove={({ notebook, path }) => store.removeAttachment(notebook, path)}
+        />
+      )}
       {conflicts.length > 0 && (
         <ConflictNotice
           conflicts={conflicts}
@@ -123,6 +140,70 @@ function ConflictNotice({
             )}
           </li>
         ))}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * Images the notebook refused: each with the note that embeds it and why,
+ * and a way to take it out of the note. Nothing to dismiss: the image stays
+ * in the note, unsynced, until it is removed or replaced with a smaller one.
+ */
+function FailedAttachmentsNotice({
+  failed,
+  onRemove,
+}: {
+  failed: readonly FailedAttachment[];
+  onRemove: (attachment: FailedAttachment) => void;
+}) {
+  const notes = useNotes();
+  const count = failed.length;
+  /** The title of the first note embedding the attachment, so the member knows where it is. */
+  const embeddedIn = ({ notebook, path }: FailedAttachment) =>
+    notes.find((note) => note.notebook === notebook && note.body.includes(attachmentLink(path)))?.title ?? null;
+
+  return (
+    <section
+      role="alert"
+      aria-labelledby="failed-attachments-title"
+      className="animate-enter rounded-lg border bg-card p-3 text-sm"
+    >
+      <div className="flex flex-col gap-1">
+        <h2 id="failed-attachments-title" className="font-medium text-foreground">
+          {count === 1 ? "1 image couldn't be stored" : `${count.toLocaleString()} images couldn't be stored`}
+        </h2>
+        <p className="text-muted-foreground">
+          {count === 1
+            ? "The notebook refused it, so the note synced without it. Remove it, or replace it with a smaller image."
+            : "The notebook refused them, so the notes synced without them. Remove them, or replace them with smaller images."}
+        </p>
+      </div>
+      <ul className="mt-2 flex max-h-48 flex-col gap-1 overflow-y-auto overscroll-contain">
+        {failed.map((attachment) => {
+          const title = embeddedIn(attachment);
+          return (
+            <li key={`${attachment.notebook}/${attachment.path}`} className="flex min-w-0 items-center gap-2">
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-foreground" title={title ?? undefined}>
+                  {title ?? "Not in any note"}
+                </span>
+                <span className="truncate text-xs text-muted-foreground" title={attachment.reason}>
+                  {attachment.reason}
+                </span>
+              </span>
+              <Button
+                variant="secondary"
+                size="xs"
+                className="shrink-0"
+                aria-label={title ? `Remove the image from ${title}` : "Remove the image"}
+                onClick={() => onRemove(attachment)}
+              >
+                Remove
+              </Button>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

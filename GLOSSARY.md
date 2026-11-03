@@ -72,6 +72,10 @@ _Avoid_: Raw mode, code view, markdown mode
 One entry in a note's history: the note as it stood at the end of an editing session.
 _Avoid_: Revision, snapshot, commit (when talking to members)
 
+**Editing session**:
+A run of a note's versions made less than ten minutes apart, shown as one entry in its history that can be expanded.
+_Avoid_: Batch, group, squash
+
 ## Saving and syncing
 
 **Saved**:

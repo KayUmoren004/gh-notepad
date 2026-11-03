@@ -53,8 +53,8 @@ function Shell({ member }: { member: ShellMember }) {
     [engine, route],
   );
   const create = useCallback(
-    ({ instant = false } = {}) => {
-      const id = store.createNote();
+    ({ instant = false, notebook }: { instant?: boolean; notebook?: string } = {}) => {
+      const id = store.createNote({ notebook });
       setCreatedId(id);
       show(id, { instant });
     },
@@ -99,7 +99,7 @@ function Shell({ member }: { member: ShellMember }) {
           member={member}
           openId={route.noteId}
           onOpen={show}
-          onCreate={() => create()}
+          onCreate={(options) => create(options)}
           onSearch={search}
           className={cn(
             "md:transition-[translate,opacity] md:duration-(--duration-base) md:ease-out motion-reduce:md:transition-[opacity] in-data-[instant]:md:transition-none",

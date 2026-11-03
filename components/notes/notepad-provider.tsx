@@ -1,16 +1,30 @@
 "use client";
 
 import { createContext, use, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
-import { openDeviceStore, type Account, type DeviceStore, type Note } from "@/lib/device-store";
-import { buildNotebookTrees, recentNotes, type NotebookTree } from "@/lib/notebook-tree";
-import { createRemote } from "@/lib/remote";
+import { openDeviceStore, type Account, type DeviceStore, type FailedAttachment, type Note } from "@/lib/device-store";
+import { buildNotebookTrees, notebookName, recentNotes, type NotebookTree } from "@/lib/notebook-tree";
+import { createRemote, type Remote } from "@/lib/remote";
 import { createSyncEngine, type SyncEngine, type SyncStatus } from "@/lib/sync-engine";
 import { filterByTags, indexTags, type TagIndex } from "@/lib/tags";
 
-/** The app's client side for one signed-in member: their device store and its sync engine. */
+/** The app's client side for one signed-in member: their device store, its sync engine, and the remote both reach GitHub through. */
 export interface Notepad {
   store: DeviceStore;
   engine: SyncEngine;
+  /** For calls that aren't part of sync: a note's history, and shared notebooks' collaborators and invitations. */
+  remote: Remote;
+}
+
+/** A notebook on this device, as the shell names it. */
+export interface NotebookSummary {
+  id: string;
+  /** The repository's name: what the sidebar shows. */
+  name: string;
+  owner: string;
+  repo: string;
+  kind: "personal" | "shared";
+  /** Whether the member owns it (and manages its collaborators) or collaborates on it. */
+  role: "owner" | "collaborator";
 }
 
 const NotepadContext = createContext<Notepad | null>(null);
@@ -41,9 +55,10 @@ export function NotepadProvider({
           void store.close();
           return;
         }
-        const engine = createSyncEngine({ store, remote: createRemote() });
+        const remote = createRemote();
+        const engine = createSyncEngine({ store, remote });
         engine.start();
-        opened = { store, engine };
+        opened = { store, engine, remote };
         setNotepad(opened);
       },
       (error: unknown) => {
@@ -101,18 +116,60 @@ function useTagSelection(tags: readonly string[] | undefined): readonly string[]
 }
 
 /**
- * Every notebook on the device as a tree of folders and notes, the personal
- * notebook always among them. With `tags`, only the matching notes and the
- * folders holding them.
+ * Every notebook on the device as a tree of folders and notes: the personal
+ * notebook first (always there), then the shared ones by name. With `tags`,
+ * only the matching notes and the folders holding them.
  */
 export function useNotebookTrees({ tags }: NoteListOptions = {}): NotebookTree[] {
   const { store } = useNotepad();
-  const { notes } = useSyncExternalStore(store.subscribe, store.getState, store.getState);
+  const { notes, notebooks } = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   const selected = useTagSelection(tags);
-  return useMemo(
-    () => buildNotebookTrees(filterByTags(notes.values(), selected), { notebooks: [store.personalNotebook] }),
-    [notes, selected, store.personalNotebook],
-  );
+  return useMemo(() => {
+    const trees = buildNotebookTrees(filterByTags(notes.values(), selected), {
+      notebooks: [store.personalNotebook, ...notebooks.keys()],
+    });
+    return [...trees.filter((tree) => tree.id === store.personalNotebook), ...trees.filter((tree) => tree.id !== store.personalNotebook)];
+  }, [notes, notebooks, selected, store.personalNotebook]);
+}
+
+/** Every notebook on the device: the personal notebook first, then the shared ones by name. */
+export function useNotebooks(): NotebookSummary[] {
+  const { store } = useNotepad();
+  const { notebooks } = useSyncExternalStore(store.subscribe, store.getState, store.getState);
+  return useMemo(() => {
+    const { login } = store.account;
+    const [personalOwner] = store.personalNotebook.split("/");
+    const summaries = new Map<string, NotebookSummary>();
+    summaries.set(store.personalNotebook, {
+      id: store.personalNotebook,
+      name: notebookName(store.personalNotebook),
+      owner: personalOwner,
+      repo: notebookName(store.personalNotebook),
+      kind: "personal",
+      role: "owner",
+    });
+    for (const notebook of notebooks.values()) {
+      if (summaries.has(notebook.id)) continue;
+      summaries.set(notebook.id, {
+        id: notebook.id,
+        name: notebookName(notebook.id),
+        owner: notebook.owner,
+        repo: notebook.repo,
+        kind: "shared",
+        role: notebook.owner.toLowerCase() === login.toLowerCase() ? "owner" : "collaborator",
+      });
+    }
+    const [personal, ...shared] = summaries.values();
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+    shared.sort((a, b) => collator.compare(a.name, b.name) || a.id.localeCompare(b.id));
+    return [personal, ...shared];
+  }, [notebooks, store.account, store.personalNotebook]);
+}
+
+/** One notebook by id, or `undefined` once it has left the device. */
+export function useNotebook(id: string): NotebookSummary | undefined {
+  const notebooks = useNotebooks();
+  return notebooks.find((notebook) => notebook.id === id);
 }
 
 /** The last edited notes, newest first, at most `limit`; with `tags`, among the matching notes only. */
@@ -134,6 +191,13 @@ export function useTagIndex(): TagIndex {
 export function useNote(id: string): Note | undefined {
   const { store } = useNotepad();
   const read = () => store.note(id);
+  return useSyncExternalStore(store.subscribe, read, read);
+}
+
+/** Attachments on this device that the notebook refused, oldest first; re-rendering only when they change. */
+export function useFailedAttachments(): readonly FailedAttachment[] {
+  const { store } = useNotepad();
+  const read = () => store.getState().failedAttachments;
   return useSyncExternalStore(store.subscribe, read, read);
 }
 

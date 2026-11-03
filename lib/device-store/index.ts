@@ -11,7 +11,11 @@
  *   applying pulls and pushes.
  * - Attachments (ADR 0003) inserted on this device are stored here at once
  *   (`addAttachment`), shown from the device copy (`attachmentSrc`), and
- *   offered to sync until a push commits them.
+ *   offered to sync until a push commits them. One the notebook refused is
+ *   listed in `failedAttachments` and kept out of pushes until
+ *   `removeAttachment` takes it, and its images, out of the notes.
+ * - `versions` caches what the History panel fetches (a note's version list,
+ *   the text of versions looked at), for good: commits never change.
  * - Device data is scoped per account: the database by GitHub id, and anything
  *   kept in localStorage under `deviceKey(login, name)`, so accounts sharing a
  *   browser never see each other's. `deleteDeviceData` removes all of it (what
@@ -29,12 +33,14 @@ export {
   type UnsyncedNote,
 } from "./device-data";
 export {
+  notebookId,
   personalNotebookId,
   type Account,
   type AgreedVersion,
   type DeviceState,
   type DeviceStore,
   type DeviceStoreOptions,
+  type FailedAttachment,
   type NewAttachment,
   type Note,
   type Notebook,
@@ -44,3 +50,4 @@ export {
   type SyncLedger,
   type SyncRecord,
 } from "./store";
+export type { CachedHistory, CachedVersion, VersionCache } from "./version-cache";

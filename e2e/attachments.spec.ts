@@ -78,6 +78,32 @@ async function waitUntilOnDevice(page: Page, title: string, marker: string) {
     .toBe(true);
 }
 
+/** How many attachments this device's store holds, across every account on it. */
+async function attachmentsOnDevice(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const names = (await indexedDB.databases()).flatMap((db) => (db.name?.startsWith("gh-notepad-account-") ? [db.name] : []));
+    let total = 0;
+    for (const name of names) {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const opening = indexedDB.open(name);
+        opening.onsuccess = () => resolve(opening.result);
+        opening.onerror = () => reject(opening.error);
+      });
+      try {
+        if (!db.objectStoreNames.contains("attachments")) continue;
+        total += await new Promise<number>((resolve, reject) => {
+          const counting = db.transaction("attachments").objectStore("attachments").count();
+          counting.onsuccess = () => resolve(counting.result);
+          counting.onerror = () => reject(counting.error);
+        });
+      } finally {
+        db.close();
+      }
+    }
+    return total;
+  });
+}
+
 /** The image in the note body, loaded: a broken or missing image has no natural width. */
 async function expectLoadedImage(body: Locator, src: RegExp): Promise<Locator> {
   const image = imagesIn(body);
@@ -150,7 +176,7 @@ test("an image picked from the slash menu is synced and shown on another device 
 
   const other = await signInOnAnotherDevice(members.allowed);
   const served = other.waitForResponse((response) => response.url().includes("/attachments/"));
-  await other.getByRole("button", { name: title }).click({ timeout: 20_000 });
+  await other.getByRole("button", { name: title, exact: true }).click({ timeout: 20_000 });
   const image = await expectLoadedImage(
     other.getByRole("textbox", { name: "Note text" }),
     /\/api\/notebooks\/octo-member\/my-notes\/attachments\/[0-9a-f-]{36}\.png\?branch=main$/,
@@ -166,7 +192,7 @@ test("an image picked from the slash menu is synced and shown on another device 
   expect(anonymous.status()).toBe(401);
 });
 
-test("a file that isn't an image, or is too big, is refused with a clear message and never reaches the notebook", async ({
+test("a file that isn't an image, or is over the deployment's limit, is refused with a clear message and stored nowhere", async ({
   page,
   signInAs,
   fakeGitHub,
@@ -179,11 +205,13 @@ test("a file that isn't an image, or is too big, is refused with a clear message
   await pasteFile(body, { name: "notes.txt", type: "text/plain", base64: btoa("hello") });
   await expect(refusal(page)).toHaveText("Images only (JPEG, PNG, GIF, WebP, SVG)");
 
-  await pasteFile(body, { name: "huge.png", type: "image/png", size: 10 * 1024 * 1024 + 1 });
-  await expect(refusal(page)).toHaveText("Images must be under 10 MB");
+  // One byte over what the deployment stores in a request: refused here, so it can never fail to sync later.
+  await pasteFile(body, { name: "huge.png", type: "image/png", size: 4 * 1024 * 1024 + 1 });
+  await expect(refusal(page)).toHaveText("Images must be under 4 MB");
 
   await expect(imagesIn(body)).toHaveCount(0);
   await expect(page.getByRole("status")).toHaveText("Synced", { timeout: 20_000 });
+  expect(await attachmentsOnDevice(page)).toBe(0);
   const files = await fakeGitHub.files(members.allowed, "my-notes");
   expect(files[`${title}.md`]).toMatch(/Text only\n$/);
   expect(files[`${title}.md`]).not.toContain("attachments");

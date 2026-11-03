@@ -9,8 +9,16 @@ import {
   type MemberGitHub,
   type NotebookLocation,
   type RepositoryName,
+  type SharedNotebooksGitHub,
 } from "@/lib/github-gateway";
-import { ATTACHMENTS_DIR, attachmentContentType, imageProblem, isAttachmentPath } from "@/lib/attachments";
+import {
+  ATTACHMENTS_DIR,
+  attachmentContentType,
+  attachmentLimitBytes,
+  imageProblem,
+  isAttachmentPath,
+  sizeLimitMessage,
+} from "@/lib/attachments";
 import { isSafePath } from "@/lib/notebook-format";
 import {
   BLOBS_PER_REQUEST,
@@ -19,10 +27,12 @@ import {
   type AttachmentBlobResponse,
   type BlobsResponse,
   type CommitResponse,
+  type FileAtResponse,
   type FileChange,
   type FilesResponse,
   type HeadResponse,
   type NotebookRef,
+  type VersionsResponse,
 } from "@/lib/remote";
 
 /**
@@ -37,7 +47,10 @@ import {
  *   POST /api/notebooks/:owner/:repo/blobs           { shas }         text of blobs
  *   POST /api/notebooks/:owner/:repo/commits         { branch, base, message, changes }
  *   POST /api/notebooks/:owner/:repo/attachments     <image bytes>    stored as a blob, for a commit to name
+ *                                                    (413 `too_large` past the deployment's attachment limit)
  *   GET  /api/notebooks/:owner/:repo/attachments/:name ?branch=&sha=  the attachment's bytes, cacheable
+ *   GET  /api/notebooks/:owner/:repo/versions        ?branch=&path=   a note's versions, renames followed
+ *   GET  /api/notebooks/:owner/:repo/file            ?commit=&path=   a note's text at a commit
  */
 export interface NotebookApi {
   handle: (request: NextRequest) => Promise<Response>;
@@ -47,6 +60,8 @@ export interface NotebookApiOptions {
   appUrl: URL;
   readSession: (cookies: CookieReader) => Promise<Session | null>;
   github: GitHubGateway;
+  /** The largest attachment the route stores; the deployment's limit (`attachmentLimitBytes`) by default. */
+  attachmentLimitBytes?: number;
 }
 
 /** The notebook routes configured from the environment, like `authFromEnv`. */
@@ -58,6 +73,7 @@ export function notebookApiFromEnv(
     appUrl: new URL(env.NEXT_PUBLIC_APP_URL ?? ""),
     readSession: authFromEnv(env, dependencies).readSession,
     github: gatewayFromEnv(env, dependencies),
+    attachmentLimitBytes: attachmentLimitBytes(env),
   });
 }
 
@@ -128,9 +144,19 @@ function readChanges(value: unknown): FileChange[] {
   });
 }
 
-export function createNotebookApi({ appUrl, readSession, github }: NotebookApiOptions): NotebookApi {
+export function createNotebookApi({
+  appUrl,
+  readSession,
+  github,
+  attachmentLimitBytes: attachmentLimit = attachmentLimitBytes({}),
+}: NotebookApiOptions): NotebookApi {
+  /** Past the deployment's limit: the device is told so for good, not asked to try again. */
+  const tooLarge = () => new ApiFailure(413, "too_large", sizeLimitMessage(attachmentLimit));
+
   /** The member and their GitHub, or a 401 when the session is missing or expired. */
-  async function signedIn(request: NextRequest): Promise<{ session: Session; gitHub: MemberGitHub }> {
+  async function signedIn(
+    request: NextRequest,
+  ): Promise<{ session: Session; gitHub: MemberGitHub & SharedNotebooksGitHub }> {
     const session = await readSession(request.cookies);
     if (!session) throw new ApiFailure(401, "signed_out", "Sign in again to sync");
     return {
@@ -139,21 +165,40 @@ export function createNotebookApi({ appUrl, readSession, github }: NotebookApiOp
     };
   }
 
+  /** Shared notebooks already confirmed as such for a member (`login\0owner/repo`, lowercased), so one request asks GitHub once. */
+  const confirmed = new Set<string>();
+
   /**
-   * The notebook a route names. Only the member's personal notebook for now;
-   * shared notebooks widen this to repositories tagged as notebooks.
+   * The notebook a route names: the member's personal notebook, which costs
+   * GitHub nothing, or a repository tagged as a notebook that the member can
+   * open, which GitHub is asked about (ADR 0004: GitHub is the permission
+   * system). Anything else is 404, whether or not the repository exists.
    */
-  function notebookOf(session: Session, owner: string, repo: string): RepositoryName {
+  async function notebookOf(
+    { session, gitHub }: { session: Session; gitHub: SharedNotebooksGitHub },
+    owner: string,
+    repo: string,
+  ): Promise<RepositoryName> {
     if (!OWNER.test(owner) || !REPO.test(repo)) throw invalid("Invalid notebook");
     const personal =
       owner.toLowerCase() === session.member.login.toLowerCase() && repo.toLowerCase() === PERSONAL_NOTEBOOK;
-    if (!personal) throw new ApiFailure(404, "not_found", "No such notebook");
-    return { owner, repo };
+    if (personal) return { owner, repo };
+    const key = `${session.member.login}\u0000${owner}/${repo}`.toLowerCase();
+    if (confirmed.has(key)) return { owner, repo };
+    const notebook = await gitHub.findNotebook({ owner, repo });
+    if (!notebook) throw new ApiFailure(404, "not_found", "No such notebook");
+    confirmed.add(key);
+    return { owner: notebook.owner, repo: notebook.repo };
   }
 
-  function branchOf(session: Session, owner: string, repo: string, branch: unknown): NotebookLocation {
-    const notebook = notebookOf(session, owner, repo);
+  async function branchOf(
+    member: { session: Session; gitHub: SharedNotebooksGitHub },
+    owner: string,
+    repo: string,
+    branch: unknown,
+  ): Promise<NotebookLocation> {
     if (typeof branch !== "string" || !isBranch(branch)) throw invalid("Invalid branch");
+    const notebook = await notebookOf(member, owner, repo);
     return { ...notebook, branch };
   }
 
@@ -178,29 +223,34 @@ export function createNotebookApi({ appUrl, readSession, github }: NotebookApiOp
     }
 
     if (segments.length === 4 && segments[2] === ATTACHMENTS_DIR && request.method === "GET") {
-      const { session, gitHub } = await signedIn(request);
-      return serveAttachment(request, gitHub, branchOf(session, segments[0], segments[1], url.searchParams.get("branch")), segments[3]);
+      const member = await signedIn(request);
+      const notebook = await branchOf(member, segments[0], segments[1], url.searchParams.get("branch"));
+      return serveAttachment(request, member.gitHub, notebook, segments[3]);
     }
 
     if (segments.length !== 3) throw new ApiFailure(404, "not_found", "No such route");
     const [owner, repo, action] = segments;
-    const { session, gitHub } = await signedIn(request);
+    const member = await signedIn(request);
+    const { gitHub } = member;
 
     if (action === ATTACHMENTS_DIR && request.method === "POST") {
-      const notebook = notebookOf(session, owner, repo);
+      const notebook = await notebookOf(member, owner, repo);
       const type = request.headers.get("content-type")?.split(";")[0].trim() ?? "";
       const declared = Number(request.headers.get("content-length"));
-      const problem = imageProblem({ type, size: Number.isFinite(declared) && declared > 0 ? declared : 1 });
+      const size = Number.isFinite(declared) && declared > 0 ? declared : 1;
+      if (size > attachmentLimit) throw tooLarge();
+      const problem = imageProblem({ type, size }, attachmentLimit);
       if (problem) throw invalid(problem);
       const bytes = new Uint8Array(await request.arrayBuffer());
-      const late = imageProblem({ type, size: bytes.length });
+      if (bytes.length > attachmentLimit) throw tooLarge();
+      const late = imageProblem({ type, size: bytes.length }, attachmentLimit);
       if (late) throw invalid(late);
       const stored: AttachmentBlobResponse = { sha: await gitHub.storeBlob(notebook, bytes) };
       return reply(stored, 201);
     }
 
     if (action === "head" && request.method === "GET") {
-      const notebook = branchOf(session, owner, repo, url.searchParams.get("branch"));
+      const notebook = await branchOf(member, owner, repo, url.searchParams.get("branch"));
       const known = url.searchParams.get("known");
       if (known !== null && !SHA.test(known)) throw invalid("Invalid commit");
       const head: HeadResponse = await gitHub.getHead(notebook, known);
@@ -208,7 +258,7 @@ export function createNotebookApi({ appUrl, readSession, github }: NotebookApiOp
     }
 
     if (action === "files" && request.method === "GET") {
-      const notebook = notebookOf(session, owner, repo);
+      const notebook = await notebookOf(member, owner, repo);
       const commit = url.searchParams.get("commit") ?? "";
       if (!SHA.test(commit)) throw invalid("Invalid commit");
       const files: FilesResponse = { files: await gitHub.listFiles(notebook, commit) };
@@ -216,7 +266,7 @@ export function createNotebookApi({ appUrl, readSession, github }: NotebookApiOp
     }
 
     if (action === "blobs" && request.method === "POST") {
-      const notebook = notebookOf(session, owner, repo);
+      const notebook = await notebookOf(member, owner, repo);
       const { shas } = await jsonBody(request);
       if (!Array.isArray(shas) || shas.length > BLOBS_PER_REQUEST || !shas.every((sha) => typeof sha === "string" && SHA.test(sha))) {
         throw invalid(`Ask for up to ${BLOBS_PER_REQUEST} blob SHAs`);
@@ -225,9 +275,29 @@ export function createNotebookApi({ appUrl, readSession, github }: NotebookApiOp
       return reply(blobs);
     }
 
+    if (action === "versions" && request.method === "GET") {
+      const notebook = await branchOf(member, owner, repo, url.searchParams.get("branch"));
+      const path = url.searchParams.get("path") ?? "";
+      if (!isSafePath(path)) throw invalid("Unsafe path");
+      const versions: VersionsResponse = { versions: await gitHub.listVersions(notebook, path) };
+      return reply(versions);
+    }
+
+    if (action === "file" && request.method === "GET") {
+      const notebook = await notebookOf(member, owner, repo);
+      const commit = url.searchParams.get("commit") ?? "";
+      const path = url.searchParams.get("path") ?? "";
+      if (!SHA.test(commit)) throw invalid("Invalid commit");
+      if (!isSafePath(path)) throw invalid("Unsafe path");
+      const text = await gitHub.readFileAt(notebook, commit, path);
+      if (text === null) throw new ApiFailure(404, "not_found", "That version has no such note");
+      const file: FileAtResponse = { text };
+      return reply(file);
+    }
+
     if (action === "commits" && request.method === "POST") {
       const body = await jsonBody(request);
-      const notebook = branchOf(session, owner, repo, body.branch);
+      const notebook = await branchOf(member, owner, repo, body.branch);
       const base = typeof body.base === "string" ? body.base : "";
       const message = typeof body.message === "string" ? body.message.trim() : "";
       if (!SHA.test(base)) throw invalid("Invalid base commit");

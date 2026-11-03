@@ -25,7 +25,11 @@ describe("notebook routes", () => {
 
     expect(theirs.status).toBe(404);
     expect(other.status).toBe(404);
-    expect(world.github.requests().slice(before)).toEqual([]);
+    // GitHub was asked only whether each repository is a notebook the member can open; nothing was read from either.
+    expect(world.github.requests().slice(before)).toEqual([
+      { method: "GET", path: "/repos/octo-friend/my-notes", status: 200 },
+      { method: "GET", path: `/repos/${member}/dotfiles`, status: 404 },
+    ]);
   });
 
   it.each(["../escape.md", "/etc/passwd", ".git/config", "Recipes//Pancakes.md", "back\\slash.md"])(
