@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { HistoryButton, HistoryPanel, useHistoryPanel } from "@/components/history";
 import { usePaletteAction } from "@/components/palette";
 import { RichTextMode, type RichTextModeHandle } from "@/components/rich-text-mode";
@@ -65,6 +65,17 @@ export function NoteEditor({
     title.current?.focus();
     title.current?.select();
   }, [focusTitle, noteId]);
+
+  // A pull can re-title the note while its title is focused but not yet typed into (a fresh "Untitled"
+  // becomes "Untitled 2" when another device created one at the same moment). The new value drops the
+  // selection, so keystrokes would be appended to it: select the whole title again, so the next keystroke
+  // still replaces it. A draft is left alone: the member sees what they typed, and renames go on from it.
+  const storedTitle = note?.title;
+  useLayoutEffect(() => {
+    const input = title.current;
+    if (titleDraft !== null || !input || document.activeElement !== input) return;
+    input.select();
+  }, [storedTitle, titleDraft]);
 
   function switchMode(next: EditingMode) {
     if (next === mode) return;
