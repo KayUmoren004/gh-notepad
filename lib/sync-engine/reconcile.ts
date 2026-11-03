@@ -22,7 +22,12 @@ export type RemoteNote = AgreedVersion;
 export function reconcile(
   records: readonly SyncRecord[],
   remote: readonly RemoteNote[],
-  newId: () => string,
+  ids: {
+    /** The id every device gives a file that carries none (see `fallbackNoteId`). */
+    fallback: (path: string) => string;
+    /** A fresh id, for the rare fallback that is already taken. */
+    random: () => string;
+  },
 ): PullChange[] {
   const byId = new Map(records.map((record) => [record.id, record]));
   const byBasePath = new Map(records.flatMap((record) => (record.base ? [[record.base.path, record] as const] : [])));
@@ -42,7 +47,9 @@ export function reconcile(
     }
 
     if (!record) {
-      const key = id && !byId.has(id) && !changes.has(id) ? id : newId();
+      const free = (candidate: string) => !byId.has(candidate) && !changes.has(candidate);
+      const fallback = ids.fallback(file.path);
+      const key = id && free(id) ? id : free(fallback) ? fallback : ids.random();
       changes.set(key, { id: key, base: file, device: { path: file.path, text: file.text } });
       continue;
     }

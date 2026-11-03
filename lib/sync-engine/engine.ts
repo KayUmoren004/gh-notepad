@@ -1,5 +1,5 @@
 import type { DeviceStore } from "@/lib/device-store";
-import { isNotePath } from "@/lib/notebook-format";
+import { fallbackNoteId, isNotePath } from "@/lib/notebook-format";
 import { RemoteError, type NotebookRef, type Remote } from "@/lib/remote";
 import { planPush } from "./push";
 import { reconcile, type RemoteNote } from "./reconcile";
@@ -90,9 +90,7 @@ export function createSyncEngine({
 
   function sync(): Promise<void> {
     if (!running) {
-      running = run().finally(() => {
-        running = null;
-      });
+      running = run();
       return running;
     }
     followUp ??= running
@@ -114,16 +112,21 @@ export function createSyncEngine({
     firstPendingEdit = null;
     timers.clearTimeout(retryTimer);
     setStatus({ state: "syncing" });
+    let outcome: SyncStatus;
+    let failure: unknown;
     try {
       await syncNotebook(store.personalNotebook);
       failures = 0;
-      setStatus({ state: "idle", lastSyncedAt: timers.now() });
+      outcome = { state: "idle", lastSyncedAt: timers.now() };
     } catch (error) {
-      setStatus(failedStatus(error));
-      throw error;
-    } finally {
-      if (started) schedulePoll();
+      failure = error;
+      outcome = failedStatus(error);
     }
+    if (started) schedulePoll();
+    // Finished before anyone hears so: a sync asked for on hearing it starts afresh.
+    running = null;
+    setStatus(outcome);
+    if (failure !== undefined) throw failure;
   }
 
   function failedStatus(error: unknown): SyncStatus {
@@ -175,7 +178,8 @@ export function createSyncEngine({
     }));
 
     // Decided and applied in one step: no edit can land in between.
-    store.sync.applyPull(id, head.commit, reconcile(store.sync.records(id), notes, () => crypto.randomUUID()));
+    const ids = { fallback: (path: string) => fallbackNoteId(id, path), random: () => crypto.randomUUID() };
+    store.sync.applyPull(id, head.commit, reconcile(store.sync.records(id), notes, ids));
   }
 
   /** Pushes every unsynced note in one commit on top of the head this device last saw. */

@@ -87,6 +87,27 @@ function capBytes(text: string, maxBytes: number): string {
 }
 
 /**
+ * The id for a note whose file carries none (written outside the app): derived
+ * from where it is, so every device gives it the same id, and the first device
+ * to save the note writes that id into its frontmatter.
+ */
+export function fallbackNoteId(notebook: string, path: string): string {
+  const input = `${notebook.toLowerCase()}\u0000${path}`;
+  // Four 32-bit FNV-1a hashes with different offsets make 128 bits; not cryptographic, just stable.
+  const words = [0x811c9dc5, 0x01000193, 0x9e3779b9, 0x85ebca6b].map((seed) => {
+    let hash = seed;
+    for (let index = 0; index < input.length; index++) {
+      hash ^= input.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(16).padStart(8, "0");
+  });
+  const hex = words.join("");
+  // Shaped as a UUID (version 8: custom), like the ids the app makes for new notes.
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-8${hex.slice(13, 16)}-${((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+/**
  * `title`, or `title 2`, `title 3`, … — the first that no title in `taken`
  * uses. Comparison ignores case, since notebooks are checked out on
  * case-insensitive file systems too.

@@ -9,6 +9,7 @@
  */
 export { readNote, writeNote, type NoteChanges, type NoteFields } from "./note-file";
 export {
+  fallbackNoteId,
   folderOfPath,
   isNotePath,
   isSafePath,

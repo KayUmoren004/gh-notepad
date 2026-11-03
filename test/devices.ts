@@ -20,6 +20,8 @@ const appUrl = "https://notes.example";
 /** One browser signed in as a member: the app's client side as it runs on that device. */
 export interface Device {
   login: string;
+  /** The browser's IndexedDB, shared by every account signed in on it. */
+  indexedDB: IDBFactory;
   store: DeviceStore;
   engine: SyncEngine;
   /** Runs a sync to completion (joining one already running, and its follow-up). */
@@ -35,10 +37,14 @@ export interface Hold {
   release: () => void;
 }
 
+export interface SignInOptions extends Pick<SyncEngineOptions, "timers"> {
+  sameBrowserAs?: Device;
+}
+
 export interface World {
   github: FakeGitHub;
-  /** Signs a member in on a new device. */
-  signIn: (login: string, options?: Pick<SyncEngineOptions, "timers">) => Promise<Device>;
+  /** Signs a member in on a new device, or on the browser `sameBrowserAs` runs in. */
+  signIn: (login: string, options?: SignInOptions) => Promise<Device>;
   /** Holds the next request to GitHub that matches, to act while it is in flight. */
   holdGitHub: (matches: (request: Request) => boolean) => Hold;
 }
@@ -95,6 +101,7 @@ export function createWorld({ members = ["octo-member"] }: { members?: string[] 
     const engine = createSyncEngine({ store, remote, ...options });
     return {
       login: session.member.login,
+      indexedDB,
       store,
       engine,
       sync: () => engine.sync(),
@@ -109,13 +116,13 @@ export function createWorld({ members = ["octo-member"] }: { members?: string[] 
   return {
     github,
 
-    signIn: async (login, options = {}) => {
+    signIn: async (login, { sameBrowserAs, ...options } = {}) => {
       const jar = new CookieJar();
       const start = await auth.signIn(new NextRequest(`${appUrl}/api/auth/login`));
       jar.store(start);
       const callback = await github.authorize(start.headers.get("location") ?? "", { login });
       jar.store(await auth.callback(new NextRequest(callback, { headers: { cookie: jar.header() } })));
-      return open(jar, new IDBFactory(), options);
+      return open(jar, sameBrowserAs?.indexedDB ?? new IDBFactory(), options);
     },
 
     holdGitHub: (matches) => {
