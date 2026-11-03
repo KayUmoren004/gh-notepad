@@ -1,8 +1,23 @@
 import type { AgreedVersion, PullChange, SyncRecord } from "@/lib/device-store";
-import { folderOfPath, notePath, readNote, titleOfPath, uniqueTitle } from "@/lib/notebook-format";
+import { folderOfPath, notePath, readNote, titleOfPath, uniqueTitle, writeNote } from "@/lib/notebook-format";
+import { mergeNote } from "./merge";
 
 /** A note file as the notebook has it at the commit being pulled. */
 export type RemoteNote = AgreedVersion;
+
+/** A note whose device and notebook versions couldn't be merged: the device's stays, the notebook's becomes a conflict copy. */
+export interface ConflictCopy {
+  /** The note that kept the device's version. */
+  noteId: string;
+  /** The new note holding the notebook's version, created next to it. */
+  copyId: string;
+  path: string;
+}
+
+export interface Reconciliation {
+  changes: PullChange[];
+  conflicts: ConflictCopy[];
+}
 
 /**
  * Decides what a pull does to each note on the device. Pure, and applied in
@@ -12,9 +27,12 @@ export type RemoteNote = AgreedVersion;
  * - Remote notes are matched to device notes by frontmatter `id` (so a rename
  *   elsewhere is followed), falling back to the path both sides agreed on.
  * - A note with no unsynced changes takes the remote version as it is.
- * - A note with unsynced changes keeps the device's text (the merge point:
- *   #4 replaces "device wins" with a three-way merge and conflict copies); it
- *   follows a remote rename when the device didn't rename it too.
+ * - A note with unsynced changes is merged three ways with the remote version
+ *   over the version they agreed on (`mergeNote`): edits to different lines
+ *   join, and the result goes out with the next push. Where both changed the
+ *   same lines, the device's text stays and the remote version becomes a
+ *   conflict copy beside it (`<title> (conflict copy)`), so neither is lost.
+ *   It follows a remote rename when the device didn't rename it too.
  * - A note gone from the notebook leaves the device too, unless it has
  *   unsynced changes, which are kept and pushed back.
  * - A device note whose path a remote note now holds is re-titled ("Title 2").
@@ -28,12 +46,13 @@ export function reconcile(
     /** A fresh id, for the rare fallback that is already taken. */
     random: () => string;
   },
-): PullChange[] {
+): Reconciliation {
   const byId = new Map(records.map((record) => [record.id, record]));
   const byBasePath = new Map(records.flatMap((record) => (record.base ? [[record.base.path, record] as const] : [])));
   const matched = new Set<string>();
   const claimedIds = new Set<string>();
   const changes = new Map<string, Extract<PullChange, { device: unknown }> | Extract<PullChange, { remove: true }>>();
+  const unmerged: { record: SyncRecord; path: string; remote: RemoteNote }[] = [];
 
   for (const file of [...remote].sort((a, b) => a.path.localeCompare(b.path))) {
     const id = readNote(file.text).id;
@@ -62,7 +81,13 @@ export function reconcile(
     } else {
       const renamedHere = record.base !== null && record.path !== record.base.path;
       const path = renamedHere || record.base === null ? record.path : file.path;
-      changes.set(record.id, { id: record.id, base: file, device: { path, text: record.text } });
+      const merge = record.base ? mergeNote(record.text, record.base.text, file.text) : null;
+      if (merge && !merge.conflict) {
+        changes.set(record.id, { id: record.id, base: file, device: { path, text: merge.text } });
+      } else {
+        changes.set(record.id, { id: record.id, base: file, device: { path, text: record.text } });
+        if (merge?.conflict) unmerged.push({ record, path, remote: file });
+      }
     }
   }
 
@@ -75,8 +100,46 @@ export function reconcile(
     }
   }
 
+  const conflicts = conflictCopies(records, changes, unmerged, ids.random);
   const retitled = retitleCollisions(records, changes);
-  return [...changes.values(), ...retitled];
+  return { changes: [...changes.values(), ...retitled], conflicts };
+}
+
+/** The notes as they will stand once `changes` are applied, by id. */
+function outcome(records: readonly SyncRecord[], changes: Map<string, PullChange>) {
+  const final = new Map<string, { path: string; text: string; base: AgreedVersion | null }>();
+  for (const record of records) final.set(record.id, { path: record.path, text: record.text, base: record.base });
+  for (const change of changes.values()) {
+    if ("remove" in change) final.delete(change.id);
+    else final.set(change.id, { ...change.device, base: change.base });
+  }
+  return final;
+}
+
+/**
+ * A conflict copy for each note that couldn't be merged: a new note holding
+ * the remote version, titled `<title> (conflict copy)` (de-duplicated like
+ * any title) in the note's folder. It has never reached the notebook, so the
+ * next push commits it along with the device's version of the note.
+ */
+function conflictCopies(
+  records: readonly SyncRecord[],
+  changes: Map<string, PullChange>,
+  unmerged: readonly { record: SyncRecord; path: string; remote: RemoteNote }[],
+  newId: () => string,
+): ConflictCopy[] {
+  const conflicts: ConflictCopy[] = [];
+  for (const { record, path, remote } of unmerged) {
+    const final = outcome(records, changes);
+    const folder = folderOfPath(path);
+    const taken = [...final.values()].filter((note) => folderOfPath(note.path) === folder).map((note) => titleOfPath(note.path));
+    const copyPath = notePath(folder, uniqueTitle(`${titleOfPath(path)} (conflict copy)`, taken));
+    let copyId = newId();
+    while (final.has(copyId)) copyId = newId();
+    changes.set(copyId, { id: copyId, base: null, device: { path: copyPath, text: writeNote(remote.text, { id: copyId }) } });
+    conflicts.push({ noteId: record.id, copyId, path: copyPath });
+  }
+  return conflicts;
 }
 
 /**
@@ -84,12 +147,7 @@ export function reconcile(
  * note (new, or renamed here) also uses, the device-only one is re-titled.
  */
 function retitleCollisions(records: readonly SyncRecord[], changes: Map<string, PullChange>): PullChange[] {
-  const final = new Map<string, { path: string; text: string; base: AgreedVersion | null }>();
-  for (const record of records) final.set(record.id, { path: record.path, text: record.text, base: record.base });
-  for (const change of changes.values()) {
-    if ("remove" in change) final.delete(change.id);
-    else final.set(change.id, { ...change.device, base: change.base });
-  }
+  const final = outcome(records, changes);
 
   const holders = new Map<string, string[]>();
   for (const [id, { path }] of final) {
