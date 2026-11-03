@@ -2,7 +2,18 @@
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, Notebook } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { Ellipsis } from "lucide-react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
 import { useNotepad } from "@/components/notes/notepad-provider";
 import { folderKey, formatNoteCount, type DragSource, type TreeRow } from "@/lib/notebook-tree";
@@ -48,7 +59,8 @@ export function NotebookTree({ rows, scroller, openId, onOpen, onToggle }: Noteb
   const rowHeight = desktop ? ROW_HEIGHT.desktop : ROW_HEIGHT.phone;
   const [offset, setOffset] = useState(0);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [menu, setMenu] = useState<{ key: string; anchor: MenuAnchor | null } | null>(null);
+  const [menu, setMenu] = useState<{ key: string; anchor: MenuAnchor } | null>(null);
+  const menuRow = menu ? (rows.find((row) => row.key === menu.key) ?? null) : null;
   const [moving, setMoving] = useState<DragSource | null>(null);
   const [creating, setCreating] = useState<Creating | null>(null);
 
@@ -103,7 +115,10 @@ export function NotebookTree({ rows, scroller, openId, onOpen, onToggle }: Noteb
   }
 
   function act(row: TreeRow, action: RowAction) {
-    if (action === "rename") setRenaming(row.key);
+    if (action === "rename") {
+      setRenaming(row.key);
+      return;
+    }
     else if (action === "move") setMoving(sourceOf(row));
     else if (row.kind === "notebook") setCreating({ notebook: row.notebook.id, parent: "", expandKey: row.expanded ? null : row.key });
     else if (row.kind === "folder") {
@@ -138,12 +153,11 @@ export function NotebookTree({ rows, scroller, openId, onOpen, onToggle }: Noteb
                 current={row.kind === "note" && row.note.id === openId}
                 renaming={renaming === row.key}
                 menuOpen={menu?.key === row.key}
-                menuAnchor={menu?.key === row.key ? menu.anchor : null}
                 drag={drag}
                 onOpen={onOpen}
                 onToggle={onToggle}
-                onMenuChange={(open, anchor) => setMenu(open ? { key: row.key, anchor } : null)}
-                onAction={(action) => act(row, action)}
+                onMenu={(anchor) => setMenu({ key: row.key, anchor })}
+                onRename={() => setRenaming(row.key)}
                 onRenameCommit={(name) => commitRename(row, name)}
                 onRenameCancel={() => {
                   setRenaming(null);
@@ -154,6 +168,7 @@ export function NotebookTree({ rows, scroller, openId, onOpen, onToggle }: Noteb
           );
         })}
       </ul>
+      <RowMenu row={menuRow} anchor={menu?.anchor ?? null} onClose={() => setMenu(null)} onAction={act} />
       {/* What a drop would do, for assistive technology; the ghost shows it to everyone else. */}
       <p aria-live="polite" className="sr-only">
         {drag.drag?.problem ?? ""}
@@ -200,12 +215,11 @@ function Row({
   current,
   renaming,
   menuOpen,
-  menuAnchor,
   drag,
   onOpen,
   onToggle,
-  onMenuChange,
-  onAction,
+  onMenu,
+  onRename,
   onRenameCommit,
   onRenameCancel,
 }: {
@@ -213,15 +227,19 @@ function Row({
   current: boolean;
   renaming: boolean;
   menuOpen: boolean;
-  menuAnchor: MenuAnchor | null;
   drag: TreeDrag;
   onOpen: NotebookTreeProps["onOpen"];
   onToggle: NotebookTreeProps["onToggle"];
-  onMenuChange: (open: boolean, anchor: MenuAnchor | null) => void;
-  onAction: (action: RowAction) => void;
+  /** Opens the row's menu from `anchor`: its "…" button, or the point of a right click. */
+  onMenu: (anchor: MenuAnchor) => void;
+  onRename: () => void;
   onRenameCommit: (name: string) => void;
   onRenameCancel: () => void;
 }) {
+  const labelId = useId();
+  // A right click opens the menu once the click is over: on Linux the contextmenu event comes with the press,
+  // and a menu opened then would be dismissed by the release.
+  const rightClick = useRef<{ released: boolean; point: MenuAnchor | null } | null>(null);
   const expandable = row.kind !== "note";
   const expanded = expandable ? row.expanded : undefined;
   const Chevron = expanded ? ChevronDown : ChevronRight;
@@ -248,20 +266,51 @@ function Row({
     </>
   );
 
+  function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    rightClick.current = event.pointerType === "mouse" && event.button === 2 ? { released: false, point: null } : null;
+  }
+
+  /** Opens the menu once the events of the click that asked for it have all been dispatched, or the release would dismiss it. */
+  function openMenuAfterClick(anchor: MenuAnchor) {
+    setTimeout(() => onMenu(anchor), 0);
+  }
+
+  function onPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    const press = rightClick.current;
+    if (!press || event.button !== 2) return;
+    press.released = true;
+    if (press.point) {
+      rightClick.current = null;
+      openMenuAfterClick(press.point);
+    }
+  }
+
+  function onContextMenu(event: MouseEvent<HTMLDivElement>) {
+    if (renaming || dragging) return;
+    event.preventDefault();
+    const box = event.currentTarget.getBoundingClientRect();
+    const { clientX: x, clientY: y } = event;
+    // From the pointer it opens at the pointer; from the keyboard (Shift+F10) at the row's "…".
+    const inside = x >= box.left && x <= box.right && y >= box.top && y <= box.bottom && (x !== 0 || y !== 0);
+    const anchor = inside ? anchorAt(x, y) : (event.currentTarget.querySelector("[data-row-menu]") ?? event.currentTarget);
+    const press = rightClick.current;
+    if (press && !press.released) {
+      press.point = anchor;
+      return;
+    }
+    rightClick.current = null;
+    if (press) openMenuAfterClick(anchor);
+    else onMenu(anchor);
+  }
+
   return (
     <div
       data-tree-row={row.key}
       data-drop={dropState}
       className="group relative flex h-full items-center"
-      onContextMenu={(event) => {
-        if (renaming || dragging) return;
-        event.preventDefault();
-        const box = event.currentTarget.getBoundingClientRect();
-        const { clientX: x, clientY: y } = event;
-        // A right click opens the menu at the pointer; the keyboard (Shift+F10) opens it at the row's button.
-        const inside = x >= box.left && x <= box.right && y >= box.top && y <= box.bottom && (x !== 0 || y !== 0);
-        onMenuChange(true, inside ? anchorAt(x, y) : null);
-      }}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onContextMenu={onContextMenu}
     >
       {renaming ? (
         <div
@@ -291,7 +340,7 @@ function Row({
           onKeyDown={(event) => {
             if (event.key === "F2" && row.kind !== "notebook") {
               event.preventDefault();
-              onAction("rename");
+              onRename();
             }
           }}
           style={{ paddingLeft }}
@@ -305,7 +354,9 @@ function Row({
           )}
         >
           {leading}
-          <span className="min-w-0 flex-1 truncate">{row.label}</span>
+          <span id={labelId} className="min-w-0 flex-1 truncate">
+            {row.label}
+          </span>
           {count !== null && (
             <span
               aria-hidden
@@ -319,7 +370,28 @@ function Row({
           )}
         </button>
       )}
-      {!renaming && <RowMenu row={row} open={menuOpen} anchor={menuAnchor} onOpenChange={(open) => onMenuChange(open, null)} onAction={onAction} />}
+      {!renaming && (
+        // The row's "…": named "Actions" and described by the row, so a note called "Old" isn't matched twice.
+        <button
+          type="button"
+          data-row-menu
+          aria-label="Actions"
+          aria-describedby={labelId}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          title="Actions"
+          onClick={(event) => onMenu(event.currentTarget)}
+          className={cn(
+            "pressable absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+            "md:inset-y-auto md:right-1 md:h-5 md:w-5 md:rounded-sm md:hover:bg-sidebar-accent md:hover:text-sidebar-foreground",
+            // Desktop: only while the row is hovered or holds focus, or the menu is open; coarse pointers see it always.
+            "md:hidden md:group-hover:flex md:group-focus-within:flex md:pointer-coarse:flex",
+            menuOpen && "md:flex",
+          )}
+        >
+          <Ellipsis aria-hidden className="size-4" />
+        </button>
+      )}
     </div>
   );
 }

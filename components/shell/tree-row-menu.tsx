@@ -1,70 +1,88 @@
 "use client";
 
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
-import { Ellipsis, FolderInput, FolderPlus, Pencil } from "lucide-react";
+import { FolderInput, FolderPlus, Pencil } from "lucide-react";
+import { useRef, useState } from "react";
 import { DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import type { TreeRow } from "@/lib/notebook-tree";
-import { cn } from "@/lib/utils";
 
 /** What a row's menu offers. */
 export type RowAction = "new-folder" | "rename" | "move";
 
-/** A point to open the menu at (a right click), standing in for an element. */
-export interface MenuAnchor {
-  getBoundingClientRect: () => DOMRect;
-}
+/** What the menu opens from: the row's "…" button, or the point of a right click. */
+export type MenuAnchor = Element | { getBoundingClientRect: () => DOMRect };
 
 export function anchorAt(x: number, y: number): MenuAnchor {
   return { getBoundingClientRect: () => new DOMRect(x, y, 0, 0) };
 }
 
 export interface RowMenuProps {
-  row: TreeRow;
-  open: boolean;
-  /** Where the menu opens from when not from its button: the right click's point. */
+  /** The row the menu is open for; `null` keeps it closed. */
+  row: TreeRow | null;
   anchor: MenuAnchor | null;
-  onOpenChange: (open: boolean) => void;
-  onAction: (action: RowAction) => void;
+  onClose: () => void;
+  onAction: (row: TreeRow, action: RowAction) => void;
 }
 
 /**
- * The "…" at the end of a tree row and the menu behind it, which a right
- * click (or Shift+F10) opens at the pointer instead. Notebooks take new
+ * The one menu behind every row's "…" and right click, mounted once for the
+ * tree so a thousand rows don't carry a thousand menus. Notebooks take new
  * folders; folders are renamed, moved and given folders; notes are renamed
- * and moved. On desktop the button shows on hover or focus; on a phone it is
- * always there, since nothing hovers.
+ * and moved. The chosen action runs once the menu has closed and given focus
+ * back, so what it opens (a field, a dialog) keeps the focus it takes.
  */
-export function RowMenu({ row, open, anchor, onOpenChange, onAction }: RowMenuProps) {
-  const act = (action: RowAction) => () => onAction(action);
+export function RowMenu({ row, anchor, onClose, onAction }: RowMenuProps) {
+  const pending = useRef<RowAction | null>(null);
+  // The row is kept while the menu closes, so its items don't change mid-fade.
+  const [shown, setShown] = useState(row);
+  if (row && row !== shown) setShown(row);
+
   return (
-    <MenuPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <MenuPrimitive.Trigger
-        aria-label={`Actions for ${row.label}`}
-        title="Actions"
-        className={cn(
-          "pressable absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-          "md:inset-y-auto md:right-1 md:h-5 md:w-5 md:rounded-sm md:hover:bg-sidebar-accent md:hover:text-sidebar-foreground",
-          // Desktop: only while the row is hovered or holds focus, or the menu is open; coarse pointers see it always.
-          "md:hidden md:group-hover:flex md:group-focus-within:flex md:pointer-coarse:flex",
-          open && "md:flex",
-        )}
+    <MenuPrimitive.Root
+      open={row !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      onOpenChangeComplete={(open) => {
+        if (open) return;
+        const action = pending.current;
+        pending.current = null;
+        if (action && shown) onAction(shown, action);
+        // Focus goes back to the "…" that opened the menu (right clicks have the pointer); an action takes it elsewhere.
+        else if (anchor instanceof HTMLElement) anchor.focus();
+      }}
+    >
+      <DropdownMenuContent
+        finalFocus={false}
+        anchor={anchor ?? undefined}
+        align={anchor instanceof Element ? "end" : "start"}
+        className="w-auto min-w-40"
       >
-        <Ellipsis aria-hidden className="size-4" />
-      </MenuPrimitive.Trigger>
-      <DropdownMenuContent anchor={anchor ?? undefined} align={anchor ? "start" : "end"} className="w-auto min-w-40">
-        {row.kind !== "note" && (
-          <DropdownMenuItem onClick={act("new-folder")}>
+        {shown?.kind !== "note" && (
+          <DropdownMenuItem
+            onClick={() => {
+              pending.current = "new-folder";
+            }}
+          >
             <FolderPlus aria-hidden />
             New folder
           </DropdownMenuItem>
         )}
-        {row.kind !== "notebook" && (
+        {shown?.kind !== "notebook" && (
           <>
-            <DropdownMenuItem onClick={act("rename")}>
+            <DropdownMenuItem
+              onClick={() => {
+                pending.current = "rename";
+              }}
+            >
               <Pencil aria-hidden />
               Rename
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={act("move")}>
+            <DropdownMenuItem
+              onClick={() => {
+                pending.current = "move";
+              }}
+            >
               <FolderInput aria-hidden />
               Move to…
             </DropdownMenuItem>

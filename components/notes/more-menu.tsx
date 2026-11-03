@@ -24,23 +24,38 @@ export interface MoreMenuProps {
 export function MoreMenu({ note, onRename, children }: MoreMenuProps) {
   const [moving, setMoving] = useState<DragSource | null>(null);
   const afterClose = useRef<(() => void) | null>(null);
+  /** What had focus when the menu opened: its button. */
+  const trigger = useRef<HTMLElement | null>(null);
 
   return (
     <>
       <DropdownMenu
+        onOpenChange={(open) => {
+          if (open) trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        }}
         onOpenChangeComplete={(open) => {
           if (open) return;
           const action = afterClose.current;
           afterClose.current = null;
-          action?.();
+          // The menu's own focus return would land after the action's, and take the title's focus away.
+          if (action) action();
+          else trigger.current?.focus();
         }}
       >
         <DropdownMenuTrigger
-          render={<Button variant="ghost" size="icon-sm" aria-label="More" title="More" className="text-muted-foreground pointer-coarse:size-10" />}
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="More"
+              title="More"
+              className="text-muted-foreground pointer-coarse:size-10"
+            />
+          }
         >
           <Ellipsis aria-hidden />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-auto min-w-40">
+        <DropdownMenuContent finalFocus={false} align="end" className="w-auto min-w-40">
           {onRename && (
             <DropdownMenuItem
               onClick={() => {

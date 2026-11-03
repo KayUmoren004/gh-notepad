@@ -25,12 +25,17 @@ async function seed(fakeGitHub: FakeGitHubControl, login: string) {
 
 const notebooksOf = (page: Page) => page.getByRole("region", { name: "Notebooks" });
 const rowOf = (page: Page, name: string) => notebooksOf(page).getByRole("button", { name, exact: true });
+/** The "…" of the row named `name`. */
+const actionsOf = (page: Page, name: string) =>
+  notebooksOf(page)
+    .locator("[data-tree-row]", { has: page.getByRole("button", { name, exact: true }) })
+    .getByRole("button", { name: "Actions" });
 
-/** The rows' names as assistive technology reads them, top to bottom (the rows' "Actions for …" aside). */
+/** The rows' names as assistive technology reads them, top to bottom (the rows' "Actions" buttons aside). */
 async function labelsOf(region: Locator): Promise<string[]> {
   return [...(await region.ariaSnapshot()).matchAll(/button "((?:[^"\\]|\\.)*)"/g)]
     .map((match) => match[1])
-    .filter((label) => !label.startsWith("Actions for "));
+    .filter((label) => label !== "Actions");
 }
 
 /** Waits for the notebook on GitHub to hold exactly these paths (README aside), as sync lands each move. */
@@ -176,7 +181,7 @@ test("on a phone, Move to… moves a note from the tree and from the note itself
   await openNotebook(page, signInAs, login);
 
   // From a row's menu: a sheet listing the folders, the note's own folder out of bounds.
-  await notebooksOf(page).getByRole("button", { name: "Actions for Groceries" }).click();
+  await actionsOf(page, "Groceries").click();
   await page.getByRole("menuitem", { name: "Move to…" }).click();
   const sheet = page.getByRole("dialog", { name: "Move Groceries to" });
   await expect(sheet).toBeVisible();
@@ -198,14 +203,16 @@ test("on a phone, Move to… moves a note from the tree and from the note itself
   await expect(page.getByRole("textbox", { name: "Title" })).toHaveValue("Plan");
   await page.getByRole("button", { name: "More" }).click();
   await page.getByRole("menuitem", { name: "Move to…" }).click();
-  await page.getByRole("dialog", { name: "Move Plan to" }).getByRole("button", { name: "Archive", exact: true }).click();
+  const planSheet = page.getByRole("dialog", { name: "Move Plan to" });
+  await planSheet.getByRole("button", { name: "Archive", exact: true }).click();
+  await expect(planSheet).toBeHidden();
   await expect(page.getByRole("button", { name: "Archive", exact: true })).toBeVisible();
   await expect(page.getByRole("status")).toHaveText("Synced", { timeout: 20_000 });
   await page.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(page).toHaveURL("/notes");
 
   // A folder renamed from its menu, everything in it along.
-  await notebooksOf(page).getByRole("button", { name: "Actions for Projects" }).click();
+  await actionsOf(page, "Projects").click();
   await page.getByRole("menuitem", { name: "Rename" }).click();
   const field = notebooksOf(page).getByRole("textbox", { name: "Folder name" });
   await field.fill("Work");
