@@ -97,8 +97,10 @@ export function sharedNotebooksApiFromEnv(
   });
 }
 
-/** GitHub's login rule, loosely: letters, digits and hyphens, not starting or ending with a hyphen, at most 39. */
-const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+/** GitHub's username rule for someone being invited: letters, digits and single hyphens, no hyphen at either end, at most 39. */
+const USERNAME = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
+/** Existing accounts named in a path: looser, since some logins predate the rule above. */
+const ACCOUNT = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
 /** GitHub's repository name rule; GitHub would silently rewrite anything else. */
 const REPOSITORY = /^[A-Za-z0-9._-]{1,100}$/;
 const INVITATION_ID = /^[1-9][0-9]{0,15}$/;
@@ -130,9 +132,10 @@ function failed({ status, code, message, retryAfter }: ApiFailure): Response {
 
 const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
-function login(value: unknown, what: string): string {
-  const candidate = typeof value === "string" ? value.trim().replace(/^@/, "") : "";
-  if (!LOGIN.test(candidate) || candidate.includes("--")) throw invalid(`Not a GitHub ${what}`);
+/** A GitHub login: a username to invite (typed by the member, so `@` and spaces are forgiven), or an existing account. */
+function login(value: unknown, kind: "username" | "account"): string {
+  const candidate = typeof value === "string" ? (kind === "username" ? value.trim().replace(/^@/, "") : value) : "";
+  if (!(kind === "username" ? USERNAME : ACCOUNT).test(candidate)) throw invalid(`Not a GitHub ${kind}`);
   return candidate;
 }
 
@@ -201,7 +204,7 @@ export function createSharedNotebooksApi({ appUrl, readSession, github }: Shared
     }
 
     if (resource === "collaborators" && item !== undefined && method === "DELETE") {
-      const username = login(item, "username");
+      const username = login(item, "account");
       if (sameLogin(username, notebook.owner)) throw invalid("The owner can't be removed from their notebook");
       await gitHub.removeCollaborator(notebook, username);
       return done();
