@@ -19,10 +19,13 @@ export type {
   BlobsResponse,
   CommitRequest,
   CommitResponse,
+  FileAtResponse,
   FileChange,
   FilesResponse,
   HeadResponse,
   NotebookRef,
   RemoteFile,
+  RemoteVersion,
+  VersionsResponse,
 } from "./contract";
 export { BLOBS_PER_REQUEST } from "./contract";

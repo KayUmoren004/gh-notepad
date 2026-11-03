@@ -176,7 +176,7 @@ test("an image picked from the slash menu is synced and shown on another device 
 
   const other = await signInOnAnotherDevice(members.allowed);
   const served = other.waitForResponse((response) => response.url().includes("/attachments/"));
-  await other.getByRole("button", { name: title }).click({ timeout: 20_000 });
+  await other.getByRole("button", { name: title, exact: true }).click({ timeout: 20_000 });
   const image = await expectLoadedImage(
     other.getByRole("textbox", { name: "Note text" }),
     /\/api\/notebooks\/octo-member\/my-notes\/attachments\/[0-9a-f-]{36}\.png\?branch=main$/,

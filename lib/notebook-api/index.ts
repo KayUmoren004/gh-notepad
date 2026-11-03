@@ -26,10 +26,12 @@ import {
   type AttachmentBlobResponse,
   type BlobsResponse,
   type CommitResponse,
+  type FileAtResponse,
   type FileChange,
   type FilesResponse,
   type HeadResponse,
   type NotebookRef,
+  type VersionsResponse,
 } from "@/lib/remote";
 
 /**
@@ -46,6 +48,8 @@ import {
  *   POST /api/notebooks/:owner/:repo/attachments     <image bytes>    stored as a blob, for a commit to name
  *                                                    (413 `too_large` past the deployment's attachment limit)
  *   GET  /api/notebooks/:owner/:repo/attachments/:name ?branch=&sha=  the attachment's bytes, cacheable
+ *   GET  /api/notebooks/:owner/:repo/versions        ?branch=&path=   a note's versions, renames followed
+ *   GET  /api/notebooks/:owner/:repo/file            ?commit=&path=   a note's text at a commit
  */
 export interface NotebookApi {
   handle: (request: NextRequest) => Promise<Response>;
@@ -245,6 +249,26 @@ export function createNotebookApi({
       }
       const blobs: BlobsResponse = { blobs: await gitHub.readTextBlobs(notebook, shas as string[]) };
       return reply(blobs);
+    }
+
+    if (action === "versions" && request.method === "GET") {
+      const notebook = branchOf(session, owner, repo, url.searchParams.get("branch"));
+      const path = url.searchParams.get("path") ?? "";
+      if (!isSafePath(path)) throw invalid("Unsafe path");
+      const versions: VersionsResponse = { versions: await gitHub.listVersions(notebook, path) };
+      return reply(versions);
+    }
+
+    if (action === "file" && request.method === "GET") {
+      const notebook = notebookOf(session, owner, repo);
+      const commit = url.searchParams.get("commit") ?? "";
+      const path = url.searchParams.get("path") ?? "";
+      if (!SHA.test(commit)) throw invalid("Invalid commit");
+      if (!isSafePath(path)) throw invalid("Unsafe path");
+      const text = await gitHub.readFileAt(notebook, commit, path);
+      if (text === null) throw new ApiFailure(404, "not_found", "That version has no such note");
+      const file: FileAtResponse = { text };
+      return reply(file);
     }
 
     if (action === "commits" && request.method === "POST") {

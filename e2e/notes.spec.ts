@@ -40,7 +40,7 @@ test("a note is saved on the device, synced, still there after a reload, and on 
 
   const phone = await signInOnAnotherDevice(members.allowed);
   await expect(phone).toHaveURL("/notes");
-  await phone.getByRole("button", { name: title }).click({ timeout: 20_000 });
+  await phone.getByRole("button", { name: title, exact: true }).click({ timeout: 20_000 });
   await expect(phone.getByRole("textbox", { name: "Note text" }).getByRole("listitem")).toHaveText(["Milk", "Bread"]);
   await expect(phone.getByRole("status")).toHaveText("Synced");
 });
@@ -66,7 +66,7 @@ test("an edit on one device shows up on the other without a reload", async ({
   await expect(page.getByRole("status")).toHaveText("Synced", { timeout: 20_000 });
 
   const other = await signInOnAnotherDevice(members.allowed);
-  await other.getByRole("button", { name: title }).click({ timeout: 20_000 });
+  await other.getByRole("button", { name: title, exact: true }).click({ timeout: 20_000 });
   await expect(other.getByRole("textbox", { name: "Note text" })).toHaveText("First draft");
 
   await page.getByRole("textbox", { name: "Note text" }).press("End");

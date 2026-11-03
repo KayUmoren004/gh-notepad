@@ -13,9 +13,11 @@ import { sharedNotebooksGitHub, type SharedNotebooksGitHub } from "./shared-note
 export { GITHUB_API_VERSION, GitHubError } from "./http";
 export {
   gitBlobSha,
+  MAX_VERSIONS,
   PERSONAL_NOTEBOOK,
   type CommitOutcome,
   type FileChange,
+  type FileVersion,
   type MemberGitHub,
   type NotebookBlob,
   type NotebookFile,

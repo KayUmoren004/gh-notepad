@@ -88,9 +88,13 @@ export interface FakeGitHub {
   /**
    * Plays an edit made outside the app (on github.com, or pushed from another
    * editor): commits `files` to the default branch, where `null` deletes a
-   * path. Returns the new commit's SHA.
+   * path, dated `date` (ISO 8601) or now. Returns the new commit's SHA.
    */
-  commitFiles: (owner: string, name: string, change: { message: string; files: Record<string, string | null> }) => string;
+  commitFiles: (
+    owner: string,
+    name: string,
+    change: { message: string; files: Record<string, string | null>; date?: string },
+  ) => string;
   /** Every file on the default branch, as text, by path. */
   files: (owner: string, name: string) => Record<string, string>;
   /** One file on the default branch as bytes (an attachment), or `undefined` if there is none. */

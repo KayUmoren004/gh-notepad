@@ -168,6 +168,99 @@ export function listTree(
   return listing;
 }
 
+/** What a commit did to one file, as GitHub describes it (`files[]` of a commit). */
+export interface FileChangeSummary {
+  path: string;
+  status: "added" | "modified" | "removed" | "renamed";
+  /** For `renamed`: where the file was in the parent. */
+  previousPath?: string;
+  sha: string;
+  additions: number;
+  deletions: number;
+}
+
+/** Git's rename detection threshold: a removed and an added file this alike are one rename. */
+const RENAME_SIMILARITY = 0.5;
+
+function textLines(objects: ObjectStore, sha: string): string[] {
+  const content = getObject(objects, sha, "blob")?.content.toString("utf8") ?? "";
+  return content === "" ? [] : content.replace(/\n$/, "").split("\n");
+}
+
+/** Lines added and removed between two blobs, counted the simple way (a multiset difference of lines). */
+function lineCounts(objects: ObjectStore, before: string | undefined, after: string | undefined) {
+  const old = before ? textLines(objects, before) : [];
+  const next = after ? textLines(objects, after) : [];
+  const counts = new Map<string, number>();
+  for (const line of old) counts.set(line, (counts.get(line) ?? 0) + 1);
+  let common = 0;
+  for (const line of next) {
+    const left = counts.get(line) ?? 0;
+    if (left > 0) {
+      counts.set(line, left - 1);
+      common++;
+    }
+  }
+  return { additions: next.length - common, deletions: old.length - common };
+}
+
+/** How alike two blobs are: the share of lines they have in common, 0 to 1. */
+function similarity(objects: ObjectStore, before: string, after: string): number {
+  const old = textLines(objects, before);
+  const next = textLines(objects, after);
+  const size = Math.max(old.length, next.length);
+  if (size === 0) return 1;
+  const { deletions } = lineCounts(objects, before, after);
+  return (old.length - deletions) / size;
+}
+
+/**
+ * The files a commit changed against its first parent, with renames paired
+ * up the way git pairs them: a removed and an added file with the same blob,
+ * or whose lines are at least half alike.
+ */
+export function changedFiles(objects: ObjectStore, commit: CommitObject): FileChangeSummary[] {
+  const parent = commit.parents[0] ? getObject(objects, commit.parents[0], "commit") : undefined;
+  const before = parent ? flattenTree(objects, parent.tree) : new Map<string, FileEntry>();
+  const after = flattenTree(objects, commit.tree);
+  const removed: string[] = [];
+  const added: string[] = [];
+  const changes: FileChangeSummary[] = [];
+  for (const path of [...new Set([...before.keys(), ...after.keys()])].sort()) {
+    const old = before.get(path);
+    const next = after.get(path);
+    if (!old) added.push(path);
+    else if (!next) removed.push(path);
+    else if (old.sha !== next.sha) {
+      changes.push({ path, status: "modified", sha: next.sha, ...lineCounts(objects, old.sha, next.sha) });
+    }
+  }
+
+  const renamed = new Set<string>();
+  for (const path of added) {
+    const sha = (after.get(path) as FileEntry).sha;
+    const exact = removed.find((old) => !renamed.has(old) && (before.get(old) as FileEntry).sha === sha);
+    const similar =
+      exact ??
+      removed.find(
+        (old) => !renamed.has(old) && similarity(objects, (before.get(old) as FileEntry).sha, sha) >= RENAME_SIMILARITY,
+      );
+    if (similar === undefined) {
+      changes.push({ path, status: "added", sha, ...lineCounts(objects, undefined, sha) });
+      continue;
+    }
+    renamed.add(similar);
+    const { additions, deletions } = lineCounts(objects, (before.get(similar) as FileEntry).sha, sha);
+    changes.push({ path, status: "renamed", previousPath: similar, sha, additions, deletions });
+  }
+  for (const path of removed) {
+    if (renamed.has(path)) continue;
+    const sha = (before.get(path) as FileEntry).sha;
+    changes.push({ path, status: "removed", sha, ...lineCounts(objects, sha, undefined) });
+  }
+  return changes.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
 /** Whether `ancestor` is `descendant` or one of its ancestors. */
 export function isAncestor(objects: ObjectStore, ancestor: string, descendant: string): boolean {
   const queue = [descendant];

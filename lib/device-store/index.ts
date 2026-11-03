@@ -14,6 +14,8 @@
  *   offered to sync until a push commits them. One the notebook refused is
  *   listed in `failedAttachments` and kept out of pushes until
  *   `removeAttachment` takes it, and its images, out of the notes.
+ * - `versions` caches what the History panel fetches (a note's version list,
+ *   the text of versions looked at), for good: commits never change.
  * - Device data is scoped per account: the database by GitHub id, and anything
  *   kept in localStorage under `deviceKey(login, name)`, so accounts sharing a
  *   browser never see each other's. `deleteDeviceData` removes all of it (what
@@ -47,3 +49,4 @@ export {
   type SyncLedger,
   type SyncRecord,
 } from "./store";
+export type { CachedHistory, CachedVersion, VersionCache } from "./version-cache";
