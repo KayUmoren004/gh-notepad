@@ -25,6 +25,19 @@ async function names(response: Response): Promise<string[]> {
   return ((await response.json()) as { full_name: string }[]).map((repo) => repo.full_name);
 }
 
+describe("fake GitHub: users", () => {
+  it("shows anyone a user's public profile by login, whatever its case, and 404 for an unknown login", async () => {
+    const github = createFakeGitHub();
+    github.addUser({ login: "Octo-Friend", name: "Octo Friend" });
+
+    const found = await github.fetch("https://api.github.com/users/octo-friend");
+
+    expect(found.status).toBe(200);
+    expect(await found.json()).toMatchObject({ login: "Octo-Friend", name: "Octo Friend", type: "User" });
+    expect((await github.fetch("https://api.github.com/users/nobody-by-that-name")).status).toBe(404);
+  });
+});
+
 describe("fake GitHub: repository topics", () => {
   it("replaces a repository's topics, saving them lowercase", async () => {
     const github = createFakeGitHub();

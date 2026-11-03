@@ -1,5 +1,5 @@
 import { apiError, json, type FakeRoute } from "../router";
-import { authenticate, type FakeState, type FakeUser } from "../state";
+import { authenticate, findUser, type FakeState, type FakeUser } from "../state";
 
 /** The REST representation of a user, as `GET /user` returns it. */
 export function userJson(user: FakeUser, apiOrigin: string) {
@@ -41,6 +41,15 @@ export const userRoutes: FakeRoute[] = [
       return json(userJson(user, url.origin), {
         headers: { "x-oauth-scopes": scopesHeader(state, request) },
       });
+    },
+  },
+  {
+    // A user's public profile (https://docs.github.com/en/rest/users/users#get-a-user), no token needed.
+    method: "GET",
+    path: "/users/:username",
+    handle: ({ params, url, state }) => {
+      const user = findUser(state, params.username);
+      return user ? json(userJson(user, url.origin)) : apiError(404, "Not Found");
     },
   },
 ];
