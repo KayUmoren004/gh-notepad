@@ -189,8 +189,13 @@ interface Entry {
   parsed: { text: string; fields: NoteFields };
 }
 
+/** A notebook's id on the device: its repository's full name, lowercased (GitHub matches names case-insensitively). */
+export function notebookId(owner: string, repo: string): string {
+  return `${owner}/${repo}`.toLowerCase();
+}
+
 export function personalNotebookId(login: string): string {
-  return `${login}/my-notes`.toLowerCase();
+  return notebookId(login, "my-notes");
 }
 
 export async function openDeviceStore(options: DeviceStoreOptions): Promise<DeviceStore> {
