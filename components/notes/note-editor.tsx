@@ -1,9 +1,9 @@
 "use client";
 
-import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { RichTextMode, type RichTextModeHandle } from "@/components/rich-text-mode";
-import { Button } from "@/components/ui/button";
+import { TopBar } from "@/components/shell";
+import { breadcrumbOf } from "@/lib/notebook-tree";
 import { useNote, useNotepad } from "./notepad-provider";
 import { SyncIndicator } from "./sync-indicator";
 
@@ -21,7 +21,7 @@ export function NoteEditor({
   noteId: string;
   /** Puts the cursor in the title with it selected, for a note just created. */
   focusTitle?: boolean;
-  /** Shown on small screens, where the editor covers the list. */
+  /** On a phone, where the note covers the tree, the top bar's back button calls this. */
   onBack?: () => void;
 }) {
   const { store } = useNotepad();
@@ -41,18 +41,18 @@ export function NoteEditor({
 
   return (
     <article className="flex h-full min-h-0 flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-2 px-2 md:px-4">
-        {onBack && (
-          <Button variant="ghost" size="sm" className="md:hidden" onClick={onBack}>
-            <ChevronLeft aria-hidden />
-            Notes
-          </Button>
-        )}
-        <SyncIndicator note={note} className="ml-auto px-2" />
-      </div>
+      <TopBar
+        crumbs={breadcrumbOf(note)}
+        onBack={onBack}
+        backLabel={note.folder ? note.folder.slice(note.folder.lastIndexOf("/") + 1) : "Notes"}
+      >
+        <SyncIndicator note={note} className="px-2" />
+        {/* Where the note's actions (history, share, more) go as their tickets land. */}
+        <div data-slot="note-actions" className="flex items-center gap-0.5" />
+      </TopBar>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-safe">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-6 pt-2 pb-24 md:pt-8">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-6 pt-3 pb-24 md:pt-14">
           <input
             ref={title}
             aria-label="Title"

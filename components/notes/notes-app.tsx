@@ -1,78 +1,161 @@
 "use client";
 
-import { Plus } from "lucide-react";
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import type { Account } from "@/lib/device-store";
+import { useCallback, useEffect, useState } from "react";
+import { DESKTOP, NoteScreen, Sidebar, SidebarProvider, TopBar, useMediaQuery, useNoteRoute, useShortcuts, useSidebar, type ScreenPhase } from "@/components/shell";
+import { modifierLabel } from "@/components/shell/media";
 import { cn } from "@/lib/utils";
-import { MigrationNotice } from "./migration-notice";
 import { NoteEditor } from "./note-editor";
-import { NoteList } from "./note-list";
-import { NotepadProvider, useNotepad, useNotes } from "./notepad-provider";
+import { NotepadProvider, useNote, useNotepad, useSyncStatus } from "./notepad-provider";
+
+export interface ShellMember {
+  id: number;
+  login: string;
+  avatarUrl: string;
+}
 
 /**
- * The notes screen for this slice: a flat list beside the open note (on small
- * screens, one or the other). Everything reads from the device store; sync runs
- * in the background.
+ * The notes screen: the sidebar's notebook tree and the note the URL names.
+ * Everything reads from the device store; sync runs in the background.
  */
-export function NotesApp({ account }: { account: Account }) {
+export function NotesApp({ member }: { member: ShellMember }) {
   return (
     <NotepadProvider
-      account={account}
+      account={{ id: member.id, login: member.login }}
       fallback={<p className="m-auto text-sm text-muted-foreground">Opening your notes…</p>}
     >
-      <Notes />
+      <SidebarProvider>
+        <Shell member={member} />
+      </SidebarProvider>
     </NotepadProvider>
   );
 }
 
-function Notes() {
+function Shell({ member }: { member: ShellMember }) {
   const { store, engine } = useNotepad();
-  const notes = useNotes();
-  const [openId, setOpenId] = useState<string | null>(null);
+  const route = useNoteRoute();
+  const sidebar = useSidebar();
+  const desktop = useMediaQuery(DESKTOP);
   const [createdId, setCreatedId] = useState<string | null>(null);
-  const open = notes.find((note) => note.id === openId);
+  // Whether the next push or pop of the note screen slides: taps do, keyboard actions never.
+  const [animate, setAnimate] = useState(true);
+  const [screenPhase, setScreenPhase] = useState<ScreenPhase>("closed");
+  const noteOpen = route.noteId !== null;
 
-  function show(id: string | null) {
-    // Switching notes is a good moment to sync what was just written.
-    if (id !== openId) engine.requestSync();
-    setOpenId(id);
-  }
+  const show = useCallback(
+    (id: string, { instant = false } = {}) => {
+      setAnimate(!instant);
+      if (id === route.noteId) return;
+      // Switching notes is a good moment to sync what was just written.
+      engine.requestSync();
+      route.open(id);
+    },
+    [engine, route],
+  );
+  const create = useCallback(
+    ({ instant = false } = {}) => {
+      const id = store.createNote();
+      setCreatedId(id);
+      show(id, { instant });
+    },
+    [store, show],
+  );
+  const back = useCallback(() => {
+    setAnimate(true);
+    engine.requestSync();
+    route.close();
+  }, [engine, route]);
 
-  function createNote() {
-    const id = store.createNote();
-    setCreatedId(id);
-    show(id);
-  }
+  const newNote = useCallback(() => create({ instant: true }), [create]);
+  const toggleSidebar = useCallback(() => sidebar.toggle({ instant: true }), [sidebar]);
+  useShortcuts({ newNote, toggleSidebar });
+
+  // The note last opened stays on screen while a phone's note screen slides out.
+  const [lastNoteId, setLastNoteId] = useState(route.noteId);
+  if (route.noteId !== null && route.noteId !== lastNoteId) setLastNoteId(route.noteId);
+  const closing = !noteOpen && !desktop && animate && screenPhase !== "closed";
+  const viewedId = route.noteId ?? (closing ? lastNoteId : null);
+
+  // Under a settled note screen the tree goes invisible: it keeps its scroll position, takes no taps.
+  const treeCovered = !desktop && noteOpen && screenPhase === "open";
 
   return (
-    <div className="flex min-h-0 flex-1">
-      <aside
-        aria-label="Notes"
-        className={cn("w-full min-w-0 flex-col border-r md:flex md:w-72 md:shrink-0", open ? "hidden" : "flex")}
-      >
-        <div className="flex h-12 shrink-0 items-center justify-between gap-2 pr-2 pl-5">
-          <h1 className="text-sm font-medium text-muted-foreground">Notes</h1>
-          <Button variant="ghost" size="sm" onClick={createNote}>
-            <Plus aria-hidden />
-            New note
-          </Button>
-        </div>
-        <MigrationNotice className="mx-3 mb-2" />
-        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          <NoteList notes={notes} openId={open?.id ?? null} onOpen={show} />
-        </nav>
-      </aside>
-
-      <section aria-label="Editor" className={cn("min-w-0 flex-1 flex-col md:flex", open ? "flex" : "hidden")}>
-        {open ? (
-          <NoteEditor key={open.id} noteId={open.id} focusTitle={open.id === createdId} onBack={() => show(null)} />
-        ) : (
-          <p className="m-auto px-6 text-center text-sm text-muted-foreground">
-            Pick a note, or start a new one.
-          </p>
+    <div className="flex h-full w-full">
+      <div
+        inert={desktop ? sidebar.collapsed : noteOpen}
+        data-collapsed={sidebar.collapsed || undefined}
+        data-instant={sidebar.instant || undefined}
+        className={cn(
+          "relative w-full shrink-0 overflow-hidden md:w-68",
+          "md:transition-[width] md:duration-(--duration-base) md:ease-out motion-reduce:md:transition-none data-[instant]:md:transition-none",
+          "data-[collapsed]:md:w-0",
+          treeCovered && "max-md:invisible",
         )}
-      </section>
+      >
+        <Sidebar
+          member={member}
+          openId={route.noteId}
+          onOpen={show}
+          onCreate={() => create()}
+          className={cn(
+            "md:transition-[translate,opacity] md:duration-(--duration-base) md:ease-out motion-reduce:md:transition-[opacity] in-data-[instant]:md:transition-none",
+            sidebar.collapsed && "md:-translate-x-full md:opacity-0",
+          )}
+        />
+      </div>
+
+      <NoteScreen open={noteOpen} animate={!desktop && animate} onBack={back} onPhaseChange={setScreenPhase}>
+        {viewedId !== null ? (
+          <NoteView id={viewedId} focusTitle={viewedId === createdId} onBack={back} />
+        ) : (
+          <NothingOpen />
+        )}
+      </NoteScreen>
+    </div>
+  );
+}
+
+/** The note the URL names, or what stands in for it while sync looks, or when it never arrives. */
+function NoteView({ id, focusTitle, onBack }: { id: string; focusTitle: boolean; onBack: () => void }) {
+  const note = useNote(id);
+  const status = useSyncStatus();
+  const title = note?.title;
+
+  useEffect(() => {
+    if (title === undefined) return;
+    document.title = `${title} · Notepad`;
+    return () => {
+      document.title = "Notes · Notepad";
+    };
+  }, [title]);
+
+  if (note) return <NoteEditor noteId={id} focusTitle={focusTitle} onBack={onBack} />;
+
+  // Until the first sync has had its say, the note may still be on its way.
+  const looking = status.state === "syncing" || (status.state === "idle" && status.lastSyncedAt === null);
+  return (
+    <div className="flex h-full flex-col">
+      <TopBar onBack={onBack} />
+      <div className="flex flex-1 items-center justify-center px-6">
+        <p aria-live="polite" className="max-w-xs text-center text-sm text-pretty text-muted-foreground">
+          {looking ? "Opening…" : "This note isn't in your notebooks."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** Desktop, with nothing open: the sidebar is where to go. */
+function NothingOpen() {
+  return (
+    <div className="flex h-full flex-col">
+      <TopBar />
+      <div className="flex flex-1 items-center justify-center px-6">
+        <p className="max-w-xs text-center text-sm text-pretty text-muted-foreground">
+          Pick a note from the sidebar, or press{" "}
+          <kbd className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">{modifierLabel()}N</kbd> to
+          start a new one.
+        </p>
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { createContext, use, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { openDeviceStore, type Account, type DeviceStore, type Note } from "@/lib/device-store";
+import { buildNotebookTrees, recentNotes, type NotebookTree } from "@/lib/notebook-tree";
 import { createRemote } from "@/lib/remote";
 import { createSyncEngine, type SyncEngine, type SyncStatus } from "@/lib/sync-engine";
 
@@ -85,6 +86,23 @@ export function useNotes(): Note[] {
       [...notes.values()].sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" })),
     [notes],
   );
+}
+
+/** Every notebook on the device as a tree of folders and notes, the personal notebook always among them. */
+export function useNotebookTrees(): NotebookTree[] {
+  const { store } = useNotepad();
+  const { notes } = useSyncExternalStore(store.subscribe, store.getState, store.getState);
+  return useMemo(
+    () => buildNotebookTrees(notes.values(), { notebooks: [store.personalNotebook] }),
+    [notes, store.personalNotebook],
+  );
+}
+
+/** The last edited notes, newest first, at most `limit`. */
+export function useRecentNotes(limit: number): Note[] {
+  const { store } = useNotepad();
+  const { notes } = useSyncExternalStore(store.subscribe, store.getState, store.getState);
+  return useMemo(() => recentNotes(notes.values(), limit), [notes, limit]);
 }
 
 /** One note, re-rendering only when that note changes. */

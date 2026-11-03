@@ -54,6 +54,8 @@
   --press-scale: 0.97;
   --enter-offset: 0.5rem;
   --enter-scale: 0.98;
+  /* How far a phone's note screen slides in from the right. */
+  --push-offset: 100%;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -61,6 +63,7 @@
     --press-scale: 1;
     --enter-offset: 0px;
     --enter-scale: 1;
+    --push-offset: 0px;
   }
 }
 
