@@ -199,7 +199,7 @@ test("with a thousand notes, results appear within two frames of a keystroke", a
   await seedBig(fakeGitHub, login);
   await signInAs(login);
   await expect(page).toHaveURL("/notes");
-  const notebook = page.getByRole("region", { name: "Notebooks" }).getByRole("button", { name: "my-notes" });
+  const notebook = page.getByRole("region", { name: "Notebooks" }).getByRole("button", { name: "my-notes", exact: true });
   await expect(notebook).toHaveAttribute("title", /^my-notes: 1,001 notes$/, { timeout: 60_000 });
 
   if (isMobile) await page.getByRole("button", { name: "Search" }).click();

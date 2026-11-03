@@ -23,10 +23,9 @@ const expectSaved = (page: Page, markdown: string) => expect.poll(() => saved(pa
 const formatBar = (page: Page, isMobile: boolean) =>
   page.getByRole("toolbar", { name: isMobile ? "Formatting" : "Format", exact: true });
 
+/** Extends the selection leftwards one character at a time, paced: a phone drops keys sent faster than it can read them. */
 async function selectBackwards(page: Page, characters: number) {
-  await page.keyboard.down("Shift");
-  for (let index = 0; index < characters; index++) await page.keyboard.press("ArrowLeft");
-  await page.keyboard.up("Shift");
+  for (let index = 0; index < characters; index++) await page.keyboard.press("Shift+ArrowLeft", { delay: 40 });
 }
 
 test("renders only in the browser, without hydration errors, and never rewrites the note it loads", async ({ page, request }) => {
