@@ -1,7 +1,17 @@
+import {
+  buildTree,
+  flattenTree,
+  getObject,
+  writeBlob,
+  writeCommit,
+  type FileEntry,
+  type ObjectStore,
+  type Signature,
+} from "./git";
+
 /**
  * The fake GitHub's in-memory world. Endpoints read and change it; seeding
- * methods on `FakeGitHub` add to it. Later tickets add repositories, refs,
- * commits, trees and blobs here.
+ * methods on `FakeGitHub` add to it.
  */
 
 export interface FakeUser {
@@ -49,6 +59,29 @@ export interface RefreshToken {
   expiresAt: number;
 }
 
+export interface FakeRepo {
+  id: number;
+  nodeId: string;
+  /** The owner's login, as GitHub spells it. */
+  owner: string;
+  name: string;
+  private: boolean;
+  description: string | null;
+  defaultBranch: string;
+  createdAt: string;
+  /** Branches and tags: `heads/main` → commit SHA. Empty for an empty repository. */
+  refs: Map<string, string>;
+  objects: ObjectStore;
+}
+
+/** One request the fake answered, for tests that check what GitHub was asked. */
+export interface FakeRequest {
+  method: string;
+  /** Path and query string, e.g. `/repos/octo/my-notes/git/trees/main?recursive=1`. */
+  path: string;
+  status: number;
+}
+
 export interface FakeState {
   now: () => number;
   users: Map<string, FakeUser>;
@@ -56,6 +89,9 @@ export interface FakeState {
   authorizationCodes: Map<string, AuthorizationCode>;
   accessTokens: Map<string, AccessToken>;
   refreshTokens: Map<string, RefreshToken>;
+  /** By lowercased `owner/name`. */
+  repos: Map<string, FakeRepo>;
+  requests: FakeRequest[];
   nextId: () => number;
 }
 
@@ -68,6 +104,8 @@ export function createState(options: { now?: () => number } = {}): FakeState {
     authorizationCodes: new Map(),
     accessTokens: new Map(),
     refreshTokens: new Map(),
+    repos: new Map(),
+    requests: [],
     nextId: () => ++lastId,
   };
 }
@@ -117,6 +155,15 @@ export function accessTokensFor(state: FakeState, login: string): string[] {
     .map((token) => token.token);
 }
 
+/** Issues an access token for `login` directly, as if they had authorized an app. */
+export function issueAccessToken(state: FakeState, login: string, scopes: string[] = ["repo", "read:user"]): string {
+  const user = findUser(state, login);
+  if (!user) throw new Error(`Fake GitHub has no user ${login}`);
+  const token = randomToken("gho_");
+  state.accessTokens.set(token, { token, login: user.login, clientId: "fake-seeded", scopes, expiresAt: null });
+  return token;
+}
+
 /** The user behind the request's `Authorization: Bearer|token <token>` header. */
 export function authenticate(state: FakeState, request: Request): FakeUser | null {
   const header = request.headers.get("authorization") ?? "";
@@ -134,4 +181,139 @@ const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
 export function randomToken(prefix: string, length = 36): string {
   const bytes = crypto.getRandomValues(new Uint8Array(length));
   return prefix + Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+}
+
+// ---------------------------------------------------------------- Repositories
+
+export function findRepo(state: FakeState, owner: string, name: string): FakeRepo | undefined {
+  return state.repos.get(`${owner}/${name}`.toLowerCase());
+}
+
+/** Private repositories are visible to their owner only (collaborators come with shared notebooks). */
+export function canRead(user: FakeUser | null, repo: FakeRepo): boolean {
+  return !repo.private || canWrite(user, repo);
+}
+
+export function canWrite(user: FakeUser | null, repo: FakeRepo): boolean {
+  return !!user && user.login.toLowerCase() === repo.owner.toLowerCase();
+}
+
+/** How GitHub signs commits made through the API: the user's name and no-reply address. */
+export function signatureOf(state: FakeState, user: FakeUser): Signature {
+  return {
+    name: user.name ?? user.login,
+    email: `${user.id}+${user.login}@users.noreply.github.com`,
+    date: new Date(Math.floor(state.now() / 1000) * 1000).toISOString().replace(".000Z", "Z"),
+  };
+}
+
+export interface RepoSeed {
+  owner: string;
+  name: string;
+  private?: boolean;
+  description?: string | null;
+  /** Files in the initial commit, by path. Without files the repository is empty (no commits). */
+  files?: Record<string, string>;
+}
+
+/** Creates a repository (and its owner, if new). Adding a repository that exists returns it unchanged. */
+export function addRepo(state: FakeState, seed: RepoSeed): FakeRepo {
+  const existing = findRepo(state, seed.owner, seed.name);
+  if (existing) return existing;
+  const owner = addUser(state, { login: seed.owner });
+  const id = state.nextId();
+  const repo: FakeRepo = {
+    id,
+    nodeId: Buffer.from(`010:Repository${id}`).toString("base64"),
+    owner: owner.login,
+    name: seed.name,
+    private: seed.private ?? true,
+    description: seed.description ?? null,
+    defaultBranch: "main",
+    createdAt: new Date(state.now()).toISOString(),
+    refs: new Map(),
+    objects: new Map(),
+  };
+  state.repos.set(`${repo.owner}/${repo.name}`.toLowerCase(), repo);
+  if (seed.files) commitFiles(state, repo, { message: "Initial commit", files: seed.files });
+  return repo;
+}
+
+/** The commit a branch points at, or `undefined` for an empty repository or unknown branch. */
+export function branchHead(repo: FakeRepo, branch = repo.defaultBranch): string | undefined {
+  return repo.refs.get(`heads/${branch}`);
+}
+
+/**
+ * Commits file changes to a branch as its owner would by pushing from
+ * elsewhere (github.com, another editor). `null` deletes a file.
+ */
+export function commitFiles(
+  state: FakeState,
+  repo: FakeRepo,
+  change: { message: string; files: Record<string, string | null>; branch?: string },
+): string {
+  const branch = change.branch ?? repo.defaultBranch;
+  const parent = branchHead(repo, branch);
+  const parentTree = parent ? getObject(repo.objects, parent, "commit")?.tree : undefined;
+  const files = parentTree ? flattenTree(repo.objects, parentTree) : new Map<string, FileEntry>();
+  for (const [path, content] of Object.entries(change.files)) {
+    if (content === null) files.delete(path);
+    else files.set(path, { mode: "100644", sha: writeBlob(repo.objects, Buffer.from(content)).sha });
+  }
+  const signature = signatureOf(state, addUser(state, { login: repo.owner }));
+  const commit = writeCommit(repo.objects, {
+    tree: buildTree(repo.objects, files).sha,
+    parents: parent ? [parent] : [],
+    message: change.message,
+    author: signature,
+    committer: signature,
+  });
+  repo.refs.set(`heads/${branch}`, commit.sha);
+  return commit.sha;
+}
+
+/** Every file on a branch, as text. */
+export function readFiles(repo: FakeRepo, branch = repo.defaultBranch): Record<string, string> {
+  const head = branchHead(repo, branch);
+  const tree = head ? getObject(repo.objects, head, "commit")?.tree : undefined;
+  const files: Record<string, string> = {};
+  if (!tree) return files;
+  for (const [path, { sha }] of flattenTree(repo.objects, tree)) {
+    files[path] = getObject(repo.objects, sha, "blob")?.content.toString("utf8") ?? "";
+  }
+  return files;
+}
+
+export interface FakeCommitSummary {
+  sha: string;
+  message: string;
+  parents: string[];
+  author: Signature;
+  /** What the commit changed relative to its first parent, by path. */
+  files: { path: string; status: "added" | "modified" | "removed" }[];
+}
+
+/** A branch's history, newest first, following first parents. */
+export function commitLog(repo: FakeRepo, branch = repo.defaultBranch): FakeCommitSummary[] {
+  const log: FakeCommitSummary[] = [];
+  let sha = branchHead(repo, branch);
+  while (sha) {
+    const commit = getObject(repo.objects, sha, "commit");
+    if (!commit) break;
+    const parent = commit.parents[0] ? getObject(repo.objects, commit.parents[0], "commit") : undefined;
+    const before = parent ? flattenTree(repo.objects, parent.tree) : new Map<string, FileEntry>();
+    const after = flattenTree(repo.objects, commit.tree);
+    const paths = [...new Set([...before.keys(), ...after.keys()])].sort();
+    const files = paths.flatMap((path): FakeCommitSummary["files"] => {
+      const old = before.get(path);
+      const next = after.get(path);
+      if (!old) return [{ path, status: "added" }];
+      if (!next) return [{ path, status: "removed" }];
+      return old.sha === next.sha ? [] : [{ path, status: "modified" }];
+    });
+    log.push({ sha: commit.sha, message: commit.message, parents: commit.parents, author: commit.author, files });
+    sha = commit.parents[0];
+  }
+  return log;
 }
