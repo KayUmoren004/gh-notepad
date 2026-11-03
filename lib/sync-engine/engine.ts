@@ -1,8 +1,9 @@
 import type { DeviceStore } from "@/lib/device-store";
-import { fallbackNoteId, isNotePath, isV1Path, titleOfPath } from "@/lib/notebook-format";
+import { fallbackNoteId, folderOfKeepPath, isNotePath, isV1Path, titleOfPath } from "@/lib/notebook-format";
 import { RemoteError, type NotebookRef, type Remote, type RemoteFile } from "@/lib/remote";
 import { attachmentUnits, stageAttachments, withAttachments } from "./attachments";
 import { batchMessage, planBatches } from "./batches";
+import { reconcileFolders } from "./folders";
 import { migrationUnits, planMigration, type MigrationReport, type PendingMigration } from "./migration";
 import { planPush } from "./push";
 import { reconcile, type RemoteNote } from "./reconcile";
@@ -211,6 +212,11 @@ export function createSyncEngine({
     const tree = await remote.files(ref, head.commit);
     const files = tree.filter((file) => isNotePath(file.path));
     const v1 = tree.filter((file) => isV1Path(file.path));
+    // Folders kept while empty: their markers are listed, never fetched.
+    const keptFolders = tree.flatMap((file) => {
+      const folder = folderOfKeepPath(file.path);
+      return folder === null ? [] : [folder];
+    });
     // Only blobs this device hasn't seen are fetched.
     const known = new Map<string, string>();
     for (const record of store.sync.records(id)) if (record.base) known.set(record.base.sha, record.base.text);
@@ -229,8 +235,14 @@ export function createSyncEngine({
       v1.length > 0 ? planMigration(head.commit, v1.map(withText), { records, pulled: changes, remote: notes }) : null;
     if (migration) migrations.set(id, migration);
     else migrations.delete(id);
+    const folderChanges = reconcileFolders(store.sync.folders(id), keptFolders);
     // Until the conversion is committed this head counts as unseen, so a reload before then converts again.
-    store.sync.applyPull(id, migration ? null : head.commit, migration ? [...changes, ...migration.notes] : changes);
+    store.sync.applyPull(
+      id,
+      migration ? null : head.commit,
+      migration ? [...changes, ...migration.notes] : changes,
+      folderChanges,
+    );
     if (found.length > 0) {
       conflicts = [
         ...conflicts,
@@ -256,16 +268,18 @@ export function createSyncEngine({
     const migration = migrations.get(id);
     let base = migration?.base ?? store.sync.notebook(id)?.head;
     const dirty = store.sync.records(id).filter((record) => record.dirty);
+    // Folders kept while empty whose markers must be added or moved, and what moved since the last push.
+    const folders = { dirty: store.sync.folders(id).filter((record) => record.dirty), moves: store.sync.folderMoves(id) };
     // Attachments inserted on this device go into the same commit as the notes that embed them (ADR 0003).
     const attachments = await stageAttachments(store, remote, id, ref);
-    if (dirty.length === 0 && !migration && attachments.paths.length === 0) return "clean";
+    if (dirty.length === 0 && folders.dirty.length === 0 && !migration && attachments.paths.length === 0) return "clean";
     if (!base) throw new Error("The notebook has no commits yet");
 
-    const plan = planPush(dirty);
+    const plan = planPush(dirty, folders);
     let units = attachmentUnits(plan.units, attachments);
     if (migration) units = migrationUnits(migration, units);
     const batches = planBatches(units, maxChangesPerCommit);
-    const message = withAttachments(migration?.message ?? plan.message, dirty.length, attachments);
+    const message = withAttachments(migration?.message ?? plan.message, dirty.length + folders.dirty.length, attachments);
     for (const [index, batch] of batches.entries()) {
       if (batches.length > 1) setStatus({ state: "syncing", progress: { done: index, total: batches.length } });
       const result = await remote.commit(ref, {
@@ -284,6 +298,7 @@ export function createSyncEngine({
         id,
         landed,
         batch.notes.map(({ id: noteId, path, text }) => ({ id: noteId, base: { path, text, sha: result.blobs[path] } })),
+        batch.folders,
       );
     }
     if (migration) {

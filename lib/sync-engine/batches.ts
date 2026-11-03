@@ -15,12 +15,15 @@ export interface PushedNote {
 export interface ChangeUnit {
   /** The notes the unit carries; they count as synced once it lands. */
   notes: PushedNote[];
+  /** The folders (by path) whose markers the unit carries; they count as synced once it lands. */
+  folders?: string[];
   changes: FileChange[];
 }
 
 /** One commit of a push: whole units, holding at most the per-commit limit of changes. */
 export interface Batch {
   notes: PushedNote[];
+  folders: string[];
   changes: FileChange[];
 }
 
@@ -39,10 +42,11 @@ export function planBatches(units: readonly ChangeUnit[], limit: number): Batch[
       throw new Error(`${count(unit.changes.length)} changes must land together, but a commit holds at most ${count(limit)}`);
     }
     if (!current || current.changes.length + unit.changes.length > limit) {
-      current = { notes: [], changes: [] };
+      current = { notes: [], folders: [], changes: [] };
       batches.push(current);
     }
     current.notes.push(...unit.notes);
+    current.folders.push(...(unit.folders ?? []));
     current.changes.push(...unit.changes);
   }
   return batches;
@@ -100,5 +104,9 @@ function merge(group: readonly ChangeUnit[]): ChangeUnit {
       changes.set(change.path, change);
     }
   }
-  return { notes: group.flatMap((unit) => unit.notes), changes: [...changes.values()] };
+  return {
+    notes: group.flatMap((unit) => unit.notes),
+    folders: group.flatMap((unit) => unit.folders ?? []),
+    changes: [...changes.values()],
+  };
 }

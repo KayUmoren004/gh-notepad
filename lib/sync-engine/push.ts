@@ -1,25 +1,33 @@
-import type { SyncRecord } from "@/lib/device-store";
+import type { FolderMove, FolderRecord, SyncRecord } from "@/lib/device-store";
 import { folderOfPath, titleOfPath } from "@/lib/notebook-format";
 import type { FileChange } from "@/lib/remote";
 import { count, type ChangeUnit, type PushedNote } from "./batches";
+import { folderUnits, moveMessage } from "./folders";
 
 export interface PushPlan {
   message: string;
-  /** One unit per note: what must land in the same commit for that note. */
+  /** One unit per note or folder marker: what must land in the same commit for it. */
   units: ChangeUnit[];
   /** The version of each note the push holds. */
   pushed: PushedNote[];
 }
 
+/** The folders kept on their own whose markers must be added or moved, and the folder moves made since the last push. */
+export interface FolderChanges {
+  dirty: readonly FolderRecord[];
+  moves: readonly FolderMove[];
+}
+
 /**
  * What a push of every note with unsynced changes consists of: each new or
  * edited file is written, and a renamed note's old path is deleted in the
- * same commit. The units are packed into commits by `planBatches`.
+ * same commit; a moved folder's marker likewise. The units are packed into
+ * commits by `planBatches`.
  */
-export function planPush(dirty: readonly SyncRecord[]): PushPlan {
-  const units = dirty.map(unitFor);
+export function planPush(dirty: readonly SyncRecord[], folders: FolderChanges = { dirty: [], moves: [] }): PushPlan {
+  const units = [...dirty.map(unitFor), ...folderUnits(folders.dirty)];
   return {
-    message: commitMessage(dirty),
+    message: moveMessage(dirty, folders.dirty, folders.moves) ?? commitMessage(dirty),
     units,
     pushed: units.flatMap((unit) => unit.notes),
   };

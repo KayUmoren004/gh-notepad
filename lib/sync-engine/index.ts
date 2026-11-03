@@ -23,6 +23,10 @@
  * - Attachments inserted on the device are stored on GitHub as blobs first,
  *   then named in the same commit as the notes that embed them
  *   (`attachments.ts`).
+ * - Folders kept while empty travel as `.gitkeep` markers (`folders.ts`): a
+ *   pull lists them, a push adds or moves them. A folder renamed or moved on
+ *   the device is every note under it renamed (ids kept) plus its markers
+ *   moved, in one push named after the move.
  */
 export {
   createSyncEngine,
