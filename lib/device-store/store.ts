@@ -260,9 +260,9 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
     return new Date(now()).toISOString();
   }
 
-  function edit(id: string, change: (row: NoteRow) => boolean) {
+  function edit(id: string, change: (row: NoteRow, fields: NoteFields) => boolean) {
     const entry = entries.get(id);
-    if (!entry || !change(entry.row)) return;
+    if (!entry || !change(entry.row, entry.parsed.fields)) return;
     entry.row.revision++;
     if (entry.parsed.text !== entry.row.text) entry.parsed = parse(entry.row.text);
     changed([id], { edit: true });
@@ -368,8 +368,8 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
     },
 
     editBody: (id, body) =>
-      edit(id, (row) => {
-        if (readNote(row.text).body === body) return false;
+      edit(id, (row, fields) => {
+        if (fields.body === body) return false;
         // The first save of a file written elsewhere gives it frontmatter with this note's id.
         row.text = writeNote(row.text, { body, id: row.key, updated: iso() });
         return true;
