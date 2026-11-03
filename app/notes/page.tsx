@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { SignOutButton } from "@/components/account/sign-out-button";
 import { NotesApp } from "@/components/notes/notes-app";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import { getSignedInMember } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "Notes" };
@@ -22,11 +22,7 @@ export default async function NotesPage() {
               <AvatarImage src={member.avatarUrl} alt={member.login} />
               <AvatarFallback>{member.login.charAt(0).toUpperCase()}</AvatarFallback>
             </Avatar>
-            <form action="/api/auth/logout" method="post">
-              <Button type="submit" variant="ghost" size="sm">
-                Sign out
-              </Button>
-            </form>
+            <SignOutButton account={{ id: member.id, login: member.login }} />
           </div>
         </div>
       </header>
