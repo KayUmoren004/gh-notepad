@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
+import { AppServiceWorker } from "@/components/app-service-worker";
 import { cn } from "@/lib/utils";
 import "./globals.css";
 
@@ -25,7 +26,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={cn("dark", GeistSans.variable, GeistMono.variable)}>
-      <body className="font-sans antialiased">{children}</body>
+      <body className="font-sans antialiased">
+        {children}
+        <AppServiceWorker />
+      </body>
     </html>
   );
 }
