@@ -27,6 +27,7 @@ test("after signing out, the app no longer opens offline as the member", async (
   await waitUntilAvailableOffline(page);
 
   await page.getByRole("button", { name: "Sign out" }).click();
+  await page.getByRole("button", { name: "Keep notes on this device" }).click();
   await expect(page).toHaveURL("/");
   await context.setOffline(true);
   await page.goto("/notes");

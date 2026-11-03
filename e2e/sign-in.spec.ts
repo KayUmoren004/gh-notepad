@@ -28,6 +28,7 @@ test("signing out returns to the landing page", async ({ page, signInAs }) => {
   await expect(page).toHaveURL("/notes");
 
   await page.getByRole("button", { name: "Sign out" }).click();
+  await page.getByRole("button", { name: "Keep notes on this device" }).click();
 
   await expect(page).toHaveURL("/");
   await expect(page.getByRole("link", { name: "Sign in with GitHub" })).toBeVisible();
