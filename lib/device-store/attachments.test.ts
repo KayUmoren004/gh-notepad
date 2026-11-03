@@ -1,5 +1,6 @@
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
+import { ATTACHMENT_LIMIT_BYTES } from "@/lib/attachments";
 import { openDeviceStore, type DeviceStore } from ".";
 
 const account = { id: 7, login: "octo-member" };
@@ -50,11 +51,63 @@ describe("attachments on the device", () => {
       "Images only (JPEG, PNG, GIF, WebP, SVG)",
     );
     expect(() =>
-      store.addAttachment(notebook, { type: "image/png", bytes: new Blob([new Uint8Array(10 * 1024 * 1024 + 1)]) }),
-    ).toThrow("Images must be under 10 MB");
+      store.addAttachment(notebook, { type: "image/png", bytes: new Blob([new Uint8Array(ATTACHMENT_LIMIT_BYTES + 1)]) }),
+    ).toThrow("Images must be under 4 MB");
 
     expect(store.sync.pendingAttachments(notebook)).toEqual([]);
+    expect(store.getState().failedAttachments).toEqual([]);
     await store.close();
+
+    const again = await open(store.indexedDB);
+    expect(again.sync.pendingAttachments(notebook)).toEqual([]);
+    await again.close();
+  });
+
+  it("keeps an attachment the notebook refused out of future pushes, listed as failed across a reload, still shown", async () => {
+    const store = await open();
+    const notebook = store.personalNotebook;
+    const path = store.addAttachment(notebook, { type: "image/png", bytes: png }).slice(1);
+
+    store.sync.failAttachment(notebook, path, "Images must be under 4 MB");
+
+    expect(store.sync.pendingAttachments(notebook)).toEqual([]);
+    expect(store.getState().failedAttachments).toEqual([{ notebook, path, reason: "Images must be under 4 MB" }]);
+    expect(store.attachmentSrc(notebook, path)).toMatch(/^blob:/);
+    await store.close();
+
+    const again = await open(store.indexedDB);
+    expect(again.sync.pendingAttachments(notebook)).toEqual([]);
+    expect(again.getState().failedAttachments).toEqual([{ notebook, path, reason: "Images must be under 4 MB" }]);
+    await again.close();
+  });
+
+  it("removing an attachment takes its images out of the notes that embed it and forgets the device copy", async () => {
+    const store = await open();
+    const notebook = store.personalNotebook;
+    const link = store.addAttachment(notebook, { type: "image/png", bytes: png });
+    const path = link.slice(1);
+    const id = store.createNote();
+    store.editBody(id, `Day one\n\n![Beach](${link})\n\nDay two\n`);
+    const other = store.createNote();
+    store.editBody(other, "No image\n");
+    store.sync.failAttachment(notebook, path, "Images must be under 4 MB");
+    const seen: string[] = [];
+    store.subscribe(() => seen.push(store.note(id)?.body ?? ""));
+
+    store.removeAttachment(notebook, path);
+
+    expect(store.note(id)?.body).toBe("Day one\n\nDay two\n");
+    expect(store.note(other)?.body).toBe("No image\n");
+    expect(seen.at(-1)).toBe("Day one\n\nDay two\n");
+    expect(store.getState().failedAttachments).toEqual([]);
+    expect(store.attachmentSrc(notebook, path)).toBeNull();
+    await store.close();
+
+    const again = await open(store.indexedDB);
+    expect(again.note(id)?.body).toBe("Day one\n\nDay two\n");
+    expect(again.attachmentSrc(notebook, path)).toBeNull();
+    expect(again.sync.pendingAttachments(notebook)).toEqual([]);
+    await again.close();
   });
 
   it("stops offering an attachment to sync once it is committed, but still shows it", async () => {

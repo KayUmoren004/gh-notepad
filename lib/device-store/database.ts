@@ -45,6 +45,11 @@ export interface AttachmentRow {
   sha: string | null;
   /** Committed to the notebook. */
   synced: boolean;
+  /**
+   * Why the notebook refused it (over the deployment's size limit), once a
+   * push was turned away: kept out of every push since, until removed.
+   */
+  failed?: string;
 }
 
 export interface DatabaseOptions {
