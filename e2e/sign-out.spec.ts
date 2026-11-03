@@ -20,8 +20,15 @@ async function waitUntilSynced(page: Page) {
   await expect(page.getByRole("status")).toHaveText("Synced", { timeout: 20_000 });
 }
 
+/** On a phone the open note covers the home screen, where the account controls are; its back button leads there. */
+async function showHome(page: Page) {
+  const back = page.getByRole("button", { name: /^Back to / });
+  if (await back.isVisible()) await back.click();
+}
+
 /** Opens the sign-out dialog and takes `choice`. */
 async function signOut(page: Page, choice: "Keep notes on this device" | "Remove notes from this device") {
+  await showHome(page);
   await page.getByRole("button", { name: "Sign out" }).click();
   await page.getByRole("alertdialog", { name: "Sign out?" }).getByRole("button", { name: choice }).click();
 }
@@ -116,6 +123,7 @@ test("signing out removing the notes: they are gone from the device and come bac
 test("removing with unsynced changes warns first, naming the notes that would lose them", async ({
   page,
   signInAs,
+  isMobile,
 }, testInfo) => {
   const { first } = signOutMembers[testInfo.project.name];
   const stamp = `${testInfo.project.name} ${Date.now()}`;
@@ -124,12 +132,11 @@ test("removing with unsynced changes warns first, naming the notes that would lo
   // GitHub is out of reach: the notes are saved on the device and nowhere else.
   await page.route(NOTEBOOK_ROUTES, (route) => route.abort());
   await createNote(page, titles[0], "Only here");
-  // On a phone the open note covers the list, and its "Notes" button leads back.
-  const back = page.getByRole("button", { name: "Notes" });
-  if (await back.isVisible()) await back.click();
+  await showHome(page);
   await createNote(page, titles[1], "Also only here");
   await expect(page.getByRole("status")).toHaveText(/^Saved/);
 
+  await showHome(page);
   await page.getByRole("button", { name: "Sign out" }).click();
   await page.getByRole("alertdialog", { name: "Sign out?" }).getByRole("button", { name: "Remove notes from this device" }).click();
   const warning = page.getByRole("alertdialog", { name: "Remove unsynced changes?" });
@@ -137,11 +144,12 @@ test("removing with unsynced changes warns first, naming the notes that would lo
   await expect(warning.getByRole("listitem")).toHaveText(titles);
   await expect(warning).toContainText("Removing them from this device loses those changes.");
 
-  // Cancelling keeps everything: still signed in, notes still here.
+  // Cancelling keeps everything: still signed in, notes still here (the open note on a desktop, the tree on a phone).
   await warning.getByRole("button", { name: "Cancel" }).click();
   await expect(warning).toBeHidden();
-  await expect(page).toHaveURL("/notes");
-  await expect(page.getByRole("textbox", { name: "Title" })).toHaveValue(titles[1]);
+  await expect(page).toHaveURL(/\/notes/);
+  if (isMobile) await expect(page.getByRole("button", { name: titles[1] })).toBeVisible();
+  else await expect(page.getByRole("textbox", { name: "Title" })).toHaveValue(titles[1]);
 
   await page.getByRole("button", { name: "Sign out" }).click();
   await page.getByRole("alertdialog", { name: "Sign out?" }).getByRole("button", { name: "Remove notes from this device" }).click();

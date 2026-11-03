@@ -112,8 +112,8 @@ test.describe("offline", () => {
     await expect(page.getByRole("status")).toHaveText("Saved · Offline", { timeout: 20_000 });
     await waitUntilOnDevice(page, title, "/attachments/");
 
+    // The note's URL survives the reload, so it is still the open note.
     await page.reload();
-    await page.getByRole("button", { name: title }).click();
     await expectLoadedImage(page.getByRole("textbox", { name: "Note text" }), /^blob:/);
 
     await context.setOffline(false);

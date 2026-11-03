@@ -32,9 +32,9 @@ async function appendTo(page: Page, text: string, suffix: string) {
   await page.keyboard.type(suffix);
 }
 
-/** On a phone the list is behind the open note; on a desktop it is beside it. */
+/** On a phone the tree is behind the open note, whose back button leads to it; on a desktop it is beside it. */
 async function showList(page: Page) {
-  const back = page.getByRole("button", { name: "Notes" });
+  const back = page.getByRole("button", { name: /^Back to / });
   if (await back.isVisible()) await back.click();
 }
 

@@ -11,9 +11,22 @@ export async function waitUntilControlled(page: Page) {
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), installTimeout).toBe(true);
 }
 
-/** Resolves once the service worker has stored the page this tab is showing. */
+/**
+ * Resolves once the service worker has stored the page this tab is showing.
+ * Under `/notes`, that is the app shell: a note's own URL is reached without a
+ * page load, and offline the worker answers it with the `/notes` shell.
+ */
 export async function waitUntilAvailableOffline(page: Page) {
-  await expect.poll(() => page.evaluate(async () => !!(await caches.match(location.href))), installTimeout).toBe(true);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const shell = location.pathname.startsWith("/notes") ? new URL("/notes", location.href).href : location.href;
+          return !!(await caches.match(shell));
+        }),
+      installTimeout,
+    )
+    .toBe(true);
 }
 
 /**
