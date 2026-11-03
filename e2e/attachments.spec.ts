@@ -31,9 +31,15 @@ async function newNote(page: Page, title: string): Promise<Locator> {
   return body;
 }
 
+/** The images in the note body (ProseMirror's own cursor-separator images aside). */
+const imagesIn = (body: Locator) => body.locator("img:not(.ProseMirror-separator)");
+
+/** The refusal shown beside the note body (Next's route announcer is an alert too). */
+const refusal = (page: Page) => page.getByRole("alert").filter({ hasText: /^Images/ });
+
 /** The image in the note body, loaded: a broken or missing image has no natural width. */
 async function expectLoadedImage(body: Locator, src: RegExp): Promise<Locator> {
-  const image = body.locator("img");
+  const image = imagesIn(body);
   await expect(image).toHaveAttribute("src", src);
   await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(1);
   return image;
@@ -100,8 +106,8 @@ test("an image picked from the slash menu is synced and shown on another device 
   await expect(page.getByRole("status")).toHaveText("Synced", { timeout: 20_000 });
 
   const other = await signInOnAnotherDevice(members.allowed);
-  await other.getByRole("button", { name: title }).click({ timeout: 20_000 });
   const served = other.waitForResponse((response) => response.url().includes("/attachments/"));
+  await other.getByRole("button", { name: title }).click({ timeout: 20_000 });
   const image = await expectLoadedImage(
     other.getByRole("textbox", { name: "Note text" }),
     /\/api\/notebooks\/octo-member\/my-notes\/attachments\/[0-9a-f-]{36}\.png\?branch=main$/,
@@ -128,12 +134,12 @@ test("a file that isn't an image, or is too big, is refused with a clear message
   await page.keyboard.type("Text only");
 
   await pasteFile(body, { name: "notes.txt", type: "text/plain", base64: btoa("hello") });
-  await expect(page.getByRole("alert")).toHaveText("Images only (JPEG, PNG, GIF, WebP, SVG)");
+  await expect(refusal(page)).toHaveText("Images only (JPEG, PNG, GIF, WebP, SVG)");
 
   await pasteFile(body, { name: "huge.png", type: "image/png", size: 10 * 1024 * 1024 + 1 });
-  await expect(page.getByRole("alert")).toHaveText("Images must be under 10 MB");
+  await expect(refusal(page)).toHaveText("Images must be under 10 MB");
 
-  await expect(body.locator("img")).toHaveCount(0);
+  await expect(imagesIn(body)).toHaveCount(0);
   await expect(page.getByRole("status")).toHaveText("Synced", { timeout: 20_000 });
   const files = await fakeGitHub.files(members.allowed, "my-notes");
   expect(files[`${title}.md`]).toMatch(/Text only\n$/);
