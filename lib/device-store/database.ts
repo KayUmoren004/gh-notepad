@@ -39,13 +39,28 @@ export interface DatabaseOptions {
   IDBKeyRange?: typeof IDBKeyRange;
 }
 
+/** The name of an account's database: keyed by GitHub's numeric id, which survives a login change. */
+export function databaseName(accountId: number): string {
+  return `gh-notepad-account-${accountId}`;
+}
+
 /** One IndexedDB database per GitHub account, so accounts on a shared browser never see each other's notes. */
 export class NotepadDatabase extends Dexie {
   notes!: Table<NoteRow, string>;
   notebooks!: Table<NotebookRow, string>;
 
   constructor(accountId: number, options: DatabaseOptions = {}) {
-    super(`gh-notepad-account-${accountId}`, options);
+    super(databaseName(accountId), options);
     this.version(1).stores({ notes: "key, notebook", notebooks: "id" });
   }
+}
+
+/**
+ * Deletes an account's database: every note and notebook this device holds for
+ * it. Close any `NotepadDatabase` open on it first; an open connection keeps
+ * the deletion waiting, and Dexie reopens (and so recreates) the database on
+ * that connection's next write.
+ */
+export async function deleteDatabase(accountId: number, options: DatabaseOptions = {}): Promise<void> {
+  await new NotepadDatabase(accountId, options).delete();
 }

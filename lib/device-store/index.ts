@@ -9,9 +9,23 @@
  *   write, flushed straight away when the tab is hidden or the page unloads.
  * - `sync` is the sync engine's side: records with their agreed versions, and
  *   applying pulls and pushes.
+ * - Device data is scoped per account: the database by GitHub id, and anything
+ *   kept in localStorage under `deviceKey(login, name)`, so accounts sharing a
+ *   browser never see each other's. `deleteDeviceData` removes all of it (what
+ *   signing out with "Remove notes from this device" does); `unsyncedNotes`
+ *   says what that would lose.
  */
 export {
+  clearDeviceKeys,
+  deleteDeviceData,
+  deviceKey,
+  deviceKeyPrefix,
   openDeviceStore,
+  unsyncedNotes,
+  type DeviceDataOptions,
+  type UnsyncedNote,
+} from "./device-data";
+export {
   personalNotebookId,
   type Account,
   type AgreedVersion,
