@@ -32,8 +32,8 @@ test("a note is saved on the device, synced, still there after a reload, and on 
   const files = await fakeGitHub.files(members.allowed, "my-notes");
   expect(files[`${title}.md`]).toMatch(/^---\nid: [0-9a-f-]{36}\n[\s\S]*\n---\n- Milk\n- Bread\n$/);
 
+  // The note's URL survives the reload, so it is still the open note.
   await page.reload();
-  await page.getByRole("button", { name: title }).click();
   await expect(page.getByRole("textbox", { name: "Title" })).toHaveValue(title);
   await expect(page.getByRole("textbox", { name: "Note text" }).getByRole("listitem")).toHaveText(["Milk", "Bread"]);
   await expect(page.getByRole("status")).toHaveText("Synced");

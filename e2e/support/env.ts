@@ -22,6 +22,16 @@ export const v1Members: Record<string, string> = {
   phone: "octo-v1-phone",
 };
 
+/**
+ * Allowed members whose personal notebooks the app shell specs seed, one set
+ * per Playwright project: `tree` holds a few nested folders, `big` over a
+ * thousand notes with worst-case titles.
+ */
+export const shellMembers: Record<string, { tree: string; big: string }> = {
+  desktop: { tree: "octo-tree-desktop", big: "octo-big-desktop" },
+  phone: { tree: "octo-tree-phone", big: "octo-big-phone" },
+};
+
 const oauthApp = {
   GITHUB_CLIENT_ID: "e2e-client-id",
   GITHUB_CLIENT_SECRET: "e2e-client-secret",
@@ -40,7 +50,11 @@ export const appEnv = {
   NEXT_PUBLIC_APP_URL: appUrl,
   SESSION_SECRET: "e2e-session-secret-that-is-at-least-32-characters",
   OWNER_GITHUB_USER: members.owner,
-  ALLOWED_GITHUB_USERS: [members.allowed, ...Object.values(v1Members)].join(","),
+  ALLOWED_GITHUB_USERS: [
+    members.allowed,
+    ...Object.values(v1Members),
+    ...Object.values(shellMembers).flatMap(({ tree, big }) => [tree, big]),
+  ].join(","),
   GITHUB_API_BASE_URL: fakeGitHubUrl,
   GITHUB_OAUTH_BASE_URL: fakeGitHubUrl,
   // Serves the component pages under /dev (the rich text mode harness) from the production build.
