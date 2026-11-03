@@ -1,22 +1,9 @@
-import type { Page } from "@playwright/test";
 import { members } from "./support/env";
 import { expect, test } from "./support/fixtures";
+import { waitUntilAvailableOffline, waitUntilControlled } from "./support/service-worker";
 
 // These flows need the service worker, which every other spec blocks (playwright.config.ts).
 test.use({ serviceWorkers: "allow" });
-
-/** Installing the worker precaches the whole build, which takes a while under parallel load. */
-const installTimeout = { timeout: 15_000 };
-
-/** Resolves once the service worker has stored the page this tab is showing. */
-async function waitUntilAvailableOffline(page: Page) {
-  await expect.poll(() => page.evaluate(async () => !!(await caches.match(location.href))), installTimeout).toBe(true);
-}
-
-/** Resolves once the service worker sees this tab's requests. */
-async function waitUntilControlled(page: Page) {
-  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), installTimeout).toBe(true);
-}
 
 test("the signed-in app opens offline after one online visit", async ({ page, context, signInAs }) => {
   await signInAs(members.allowed);

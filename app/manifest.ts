@@ -9,7 +9,9 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/",
     name: "Notepad",
     short_name: "Notepad",
-    description: "Notes kept as Markdown files in your own GitHub repositories, on every device, online or not.",
+    // The site's description (app/layout.tsx).
+    description:
+      "An invite-only notepad that keeps your notes as Markdown files in your own GitHub repositories, with rich text editing, version history and sharing, online or offline.",
     lang: "en",
     dir: "ltr",
     start_url: "/notes",
