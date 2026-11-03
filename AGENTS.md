@@ -4,7 +4,7 @@ An invite-only, local-first notepad: notes are Markdown files in GitHub reposito
 
 ## Status: v2 rebuild in progress
 
-The v1 app is being replaced, not extended. The plan is the spec issue titled **"Spec: gh-notepad v2 rebuild"** on `KayUmoren004/gh-notepad`; its sub-issues are the tickets, each listing the issues that block it. Before starting work:
+The v1 app is being replaced, not extended. The plan is spec issue **#1** ("Spec: gh-notepad v2 rebuild") on `KayUmoren004/gh-notepad`; its sub-issues are the tickets, each listing the issues that block it. Before starting work:
 
 1. Read the spec issue and your ticket (body and comments).
 2. Pick a ticket whose blockers are all closed, and claim it with a comment.
