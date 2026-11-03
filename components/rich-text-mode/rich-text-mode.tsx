@@ -2,6 +2,7 @@
 
 import { Extension } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extensions";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { type Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { getMarkdown, mergeMarkdown, richTextExtensions } from "@/lib/rich-text";
@@ -36,7 +37,25 @@ export interface RichTextModeProps extends ImageHandlers {
 export interface RichTextModeHandle {
   /** Puts the cursor at the start of the note body. */
   focus: () => void;
+  /** The cursor: the text of every textblock and where in them it is; null until the editor exists. */
+  selection: () => { blocks: string[]; block: number; offset: number } | null;
+  /** Puts the cursor `offset` characters into the `block`th textblock, scrolled into view. */
+  placeCursor: (block: number, offset: number, focus: boolean) => void;
 }
+
+/** Every textblock in `doc`, in order, with its position. */
+function textblocks(doc: ProseMirrorNode): { pos: number; node: ProseMirrorNode }[] {
+  const blocks: { pos: number; node: ProseMirrorNode }[] = [];
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock) return true;
+    blocks.push({ pos, node });
+    return false;
+  });
+  return blocks;
+}
+
+/** A textblock's text up to `to`, with one character per inline atom (a soft break, an image). */
+const textOf = (node: ProseMirrorNode, to = node.content.size) => node.textBetween(0, to, undefined, " ");
 
 /** Mod+K opens the link field for the selection. */
 const LinkShortcut = Extension.create<{ open: () => void }>({
@@ -119,7 +138,33 @@ export function RichTextMode({
     },
   });
 
-  useImperativeHandle(ref, () => ({ focus: () => editor?.commands.focus("start") }), [editor]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => editor?.commands.focus("start"),
+      selection: () => {
+        if (!editor) return null;
+        const blocks = textblocks(editor.state.doc);
+        const head = editor.state.selection.$head.pos;
+        let block = blocks.findIndex(({ pos, node }) => head >= pos + 1 && head <= pos + 1 + node.content.size);
+        let offset = 0;
+        if (block === -1) block = Math.max(0, blocks.findLastIndex(({ pos }) => pos < head));
+        else offset = textOf(blocks[block].node, head - blocks[block].pos - 1).length;
+        return { blocks: blocks.map(({ node }) => textOf(node)), block, offset };
+      },
+      placeCursor: (block, offset, focus) => {
+        if (!editor) return;
+        const blocks = textblocks(editor.state.doc);
+        const target = blocks[Math.min(Math.max(block, 0), blocks.length - 1)];
+        const pos = target ? target.pos + 1 + Math.min(Math.max(offset, 0), target.node.content.size) : 0;
+        editor.chain().setTextSelection(pos).scrollIntoView().run();
+        // Not `commands.focus(pos)`: on a phone it focuses the DOM before dispatching its own transaction, and
+        // whatever the focus itself changes (Tiptap's focus mark, a re-read of the DOM) then makes that stale.
+        if (focus) editor.view.focus();
+      },
+    }),
+    [editor],
+  );
 
   useEffect(() => {
     if (!editor || value === agreed.current) return;

@@ -1,14 +1,16 @@
 import type { DeviceStore } from "@/lib/device-store";
 import { fallbackNoteId, isNotePath, isV1Path, titleOfPath } from "@/lib/notebook-format";
 import { RemoteError, type NotebookRef, type Remote, type RemoteFile } from "@/lib/remote";
-import { stageAttachments, withAttachments } from "./attachments";
-import { planMigration, type MigrationReport, type PendingMigration } from "./migration";
+import { attachmentUnits, stageAttachments, withAttachments } from "./attachments";
+import { batchMessage, planBatches } from "./batches";
+import { migrationUnits, planMigration, type MigrationReport, type PendingMigration } from "./migration";
 import { planPush } from "./push";
 import { reconcile, type RemoteNote } from "./reconcile";
 
 export type SyncStatus =
   | { state: "idle"; lastSyncedAt: number | null }
-  | { state: "syncing" }
+  /** `progress` while a push takes several commits: `done` of `total` have landed. */
+  | { state: "syncing"; progress?: { done: number; total: number } }
   /** The app's server can't be reached; sync resumes on reconnect. */
   | { state: "offline" }
   /** The session ended: sync waits for the member to sign in again. Device data is untouched. */
@@ -47,6 +49,8 @@ export interface SyncEngineOptions {
   maxWaitMs?: number;
   /** Pull interval while the app is visible. Default 30 s. */
   pollMs?: number;
+  /** Changes per commit; a larger push is split into several. Default 1,000, the notebook routes' limit. */
+  maxChangesPerCommit?: number;
 }
 
 export interface SyncEngine {
@@ -97,6 +101,7 @@ export function createSyncEngine({
   idleMs = 3_000,
   maxWaitMs = 20_000,
   pollMs = 30_000,
+  maxChangesPerCommit = 1000,
 }: SyncEngineOptions): SyncEngine {
   const listeners = new Set<() => void>();
   let status: SyncStatus = { state: "idle", lastSyncedAt: null };
@@ -241,10 +246,15 @@ export function createSyncEngine({
     }
   }
 
-  /** Pushes every unsynced note in one commit on top of the head this device last saw. */
+  /**
+   * Pushes every unsynced note on top of the head this device last saw: one
+   * commit, or when more changes than a commit can carry, the fewest commits
+   * that keep each note's changes together, each on top of the last. What
+   * landed stays landed: a failure part-way is resumed by the next sync.
+   */
   async function push(id: string, ref: NotebookRef): Promise<"clean" | "pushed" | "branch-moved"> {
     const migration = migrations.get(id);
-    const base = migration?.base ?? store.sync.notebook(id)?.head;
+    let base = migration?.base ?? store.sync.notebook(id)?.head;
     const dirty = store.sync.records(id).filter((record) => record.dirty);
     // Attachments inserted on this device go into the same commit as the notes that embed them (ADR 0003).
     const attachments = await stageAttachments(store, remote, id, ref);
@@ -252,22 +262,34 @@ export function createSyncEngine({
     if (!base) throw new Error("The notebook has no commits yet");
 
     const plan = planPush(dirty);
-    const result = await remote.commit(ref, {
-      base,
-      message: withAttachments(migration?.message ?? plan.message, dirty.length, attachments),
-      changes: [...plan.changes, ...attachments.changes, ...(migration?.changes ?? [])],
-    });
-    if (result.status === "branch-moved") return "branch-moved";
+    let units = attachmentUnits(plan.units, attachments);
+    if (migration) units = migrationUnits(migration, units);
+    const batches = planBatches(units, maxChangesPerCommit);
+    const message = withAttachments(migration?.message ?? plan.message, dirty.length, attachments);
+    for (const [index, batch] of batches.entries()) {
+      if (batches.length > 1) setStatus({ state: "syncing", progress: { done: index, total: batches.length } });
+      const result = await remote.commit(ref, {
+        base,
+        message: batchMessage(message, index + 1, batches.length),
+        changes: batch.changes,
+      });
+      if (result.status === "branch-moved") return "branch-moved";
+      base = result.commit;
+      // Until the whole conversion is committed its head counts as unseen, as after the pull that planned it:
+      // a sync that resumes part-way pulls what landed and plans the rest.
+      const landed = migration && index < batches.length - 1 ? migration.base : result.commit;
+      const paths = new Set(batch.changes.map((change) => change.path));
+      store.sync.applyAttachmentPush(id, attachments.paths.filter((path) => paths.has(path)));
+      store.sync.applyPush(
+        id,
+        landed,
+        batch.notes.map(({ id: noteId, path, text }) => ({ id: noteId, base: { path, text, sha: result.blobs[path] } })),
+      );
+    }
     if (migration) {
       migrations.delete(id);
-      migrated = { notebook: id, commit: result.commit, skipped: migration.skipped };
+      migrated = { notebook: id, commit: base, skipped: migration.skipped };
     }
-    store.sync.applyAttachmentPush(id, attachments.paths);
-    store.sync.applyPush(
-      id,
-      result.commit,
-      plan.pushed.map(({ id: noteId, path, text }) => ({ id: noteId, base: { path, text, sha: result.blobs[path] } })),
-    );
     return "pushed";
   }
 

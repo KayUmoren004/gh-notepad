@@ -14,7 +14,9 @@ describe("v1 migration: missing fields", () => {
   it("fills in what a v1 note lacks: the id from its file name, an Untitled title, the top level", () => {
     const migration = migrateV1([{ path: "notes/5e6f7a8b.json", text: '{ "content": "Just a body\\n" }' }]);
 
-    expect(migration.notes).toEqual([{ id: "5e6f7a8b", path: "Untitled.md", text: "---\nid: 5e6f7a8b\n---\nJust a body\n" }]);
+    expect(migration.notes).toEqual([
+      { id: "5e6f7a8b", path: "Untitled.md", text: "---\nid: 5e6f7a8b\n---\nJust a body\n", source: "notes/5e6f7a8b.json" },
+    ]);
     expect(migration.skipped).toEqual([]);
   });
 
@@ -36,15 +38,15 @@ describe("v1 migration: missing fields", () => {
     ]);
 
     expect(migration.notes).toEqual([
-      { id: "c3", path: "Untitled.md", text: "---\nid: c3\n---\n" },
-      { id: "d4", path: "Tagged.md", text: "---\nid: d4\ntags: [a, b]\n---\n" },
+      { id: "c3", path: "Untitled.md", text: "---\nid: c3\n---\n", source: "notes/c3.json" },
+      { id: "d4", path: "Tagged.md", text: "---\nid: d4\ntags: [a, b]\n---\n", source: "notes/d4.json" },
     ]);
   });
 
   it("reads a metadata.json without folders as having none", () => {
     const migration = migrateV1([{ path: "metadata.json", text: '{ "tags": [] }' }]);
 
-    expect(migration).toEqual({ notes: [], folders: [], removed: ["metadata.json"], skipped: [] });
+    expect(migration).toEqual({ notes: [], converted: [], folders: [], removed: ["metadata.json"], skipped: [] });
   });
 });
 
@@ -98,7 +100,9 @@ describe("v1 migration: malformed files", () => {
       v1Note({ id: "fine", title: "Fine", content: "Still here\n", folder: "Work", tags: [], createdAt: "", updatedAt: "" }),
     ]);
 
-    expect(migration.notes).toEqual([{ id: "fine", path: "Work/Fine.md", text: "---\nid: fine\n---\nStill here\n" }]);
+    expect(migration.notes).toEqual([
+      { id: "fine", path: "Work/Fine.md", text: "---\nid: fine\n---\nStill here\n", source: "notes/fine.json" },
+    ]);
     expect(migration.skipped).toEqual([
       { path: "metadata.json", reason: "isn't valid JSON" },
       { path: "notes/empty.json", reason: "isn't valid JSON" },
@@ -136,6 +140,7 @@ describe("v1 migration: running again", () => {
     const again = migrateV1(v1, [first.notes[0], { path: "README.md", text: "# my-notes\n" }]);
 
     expect(again.notes).toEqual([first.notes[1]]);
+    expect(again.converted).toEqual([{ id: "a", source: "notes/a.json" }]);
     expect(again.folders).toEqual([]);
     expect(again.removed).toEqual(first.removed);
     expect(migrateV1(v1, first.notes).notes).toEqual([]);
@@ -148,8 +153,8 @@ describe("v1 migration: running again", () => {
     const migration = migrateV1([original, copy]);
 
     expect(migration.notes).toEqual([
-      { id: "a", path: "Plan.md", text: "---\nid: a\n---\n1\n" },
-      { id: "a-copy", path: "Plan 2.md", text: "---\nid: a-copy\n---\n2\n" },
+      { id: "a", path: "Plan.md", text: "---\nid: a\n---\n1\n", source: "notes/a.json" },
+      { id: "a-copy", path: "Plan 2.md", text: "---\nid: a-copy\n---\n2\n", source: "notes/a-copy.json" },
     ]);
     expect(migrateV1([original, copy], migration.notes).notes).toEqual([]);
   });
@@ -193,6 +198,7 @@ describe("v1 migration: typical v1 data", () => {
           "- Bread",
           "",
         ].join("\n"),
+        source: "notes/0b9e2c1a-5d7f-4a8e-9c3b-2f1e0d9c8b7a.json",
       },
       {
         id: "7c4d1f2e-3b6a-4c9d-8e1f-0a2b3c4d5e6f",
@@ -208,6 +214,7 @@ describe("v1 migration: typical v1 data", () => {
           "",
           "Ship **v2**.",
         ].join("\n"),
+        source: "notes/7c4d1f2e-3b6a-4c9d-8e1f-0a2b3c4d5e6f.json",
       },
     ]);
     expect(migration.removed).toEqual([

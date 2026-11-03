@@ -46,7 +46,7 @@ export interface Hold {
   release: () => void;
 }
 
-export interface SignInOptions extends Pick<SyncEngineOptions, "timers"> {
+export interface SignInOptions extends Pick<SyncEngineOptions, "timers" | "maxChangesPerCommit"> {
   sameBrowserAs?: Device;
 }
 
@@ -94,7 +94,7 @@ export function createWorld({ members = ["octo-member"] }: { members?: string[] 
   async function open(
     jar: CookieJar,
     indexedDB: IDBFactory,
-    options: Pick<SyncEngineOptions, "timers">,
+    options: Pick<SyncEngineOptions, "timers" | "maxChangesPerCommit">,
   ): Promise<Device> {
     const session = await auth.readSession(jar);
     if (!session) throw new Error("The device isn't signed in");

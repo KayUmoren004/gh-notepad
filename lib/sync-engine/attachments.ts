@@ -1,5 +1,7 @@
+import { attachmentLink } from "@/lib/attachments";
 import type { DeviceStore } from "@/lib/device-store";
 import type { FileChange, NotebookRef, Remote } from "@/lib/remote";
+import type { ChangeUnit } from "./batches";
 
 /** The attachments a push adds to the notebook, ready to go into its commit. */
 export interface AttachmentsPush {
@@ -31,6 +33,25 @@ export async function stageAttachments(
     push.paths.push(attachment.path);
   }
   return push;
+}
+
+/**
+ * The push's units with its attachments added: each attachment joins the
+ * unit of the note that embeds it, so the two land in the same commit however
+ * many commits the push takes; an attachment no note in the push embeds goes
+ * on its own.
+ */
+export function attachmentUnits(units: readonly ChangeUnit[], attachments: AttachmentsPush): ChangeUnit[] {
+  const pending = new Map(attachments.changes.map((change) => [change.path, change]));
+  const joined = units.map((unit) => {
+    const embedded = [...pending.values()].filter((change) =>
+      unit.notes.some((note) => note.text.includes(attachmentLink(change.path))),
+    );
+    if (embedded.length === 0) return unit;
+    for (const change of embedded) pending.delete(change.path);
+    return { notes: unit.notes, changes: [...unit.changes, ...embedded] };
+  });
+  return [...joined, ...[...pending.values()].map((change) => ({ notes: [], changes: [change] }))];
 }
 
 /**

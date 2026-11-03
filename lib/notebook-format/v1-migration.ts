@@ -18,8 +18,10 @@ export interface TextFile {
 
 /** What converting a notebook's v1 data into the notebook format comes to. */
 export interface V1Migration {
-  /** One note file for each v1 note the notebook doesn't have yet, with the note's id. */
-  notes: { id: string; path: string; text: string }[];
+  /** One note file for each v1 note the notebook doesn't have yet, with the note's id and the v1 file it replaces. */
+  notes: { id: string; path: string; text: string; source: string }[];
+  /** The v1 notes converted earlier (`existing` has their notes), with the v1 file each still replaces. */
+  converted: { id: string; source: string }[];
   /** A `<folder>/.gitkeep` for each folder v1 listed that holds no notes, so it stays as an empty folder. */
   folders: string[];
   /** Every v1 file: the migration removes them all (git history keeps them). */
@@ -98,13 +100,17 @@ export function migrateV1(files: readonly TextFile[], existing: readonly TextFil
   for (const { path } of existing) taken(titles, folderOfPath(path)).push(titleOfPath(path));
 
   const notes: V1Migration["notes"] = [];
+  const convertedEarlier: V1Migration["converted"] = [];
   for (const note of readable) {
     const { fields } = note;
     const id =
       [text(fields.id), note.fileId].find((candidate) => candidate && !claimed.has(candidate)) ??
       fallbackNoteId("", note.path);
     claimed.add(id);
-    if (converted.has(id)) continue;
+    if (converted.has(id)) {
+      convertedEarlier.push({ id, source: note.path });
+      continue;
+    }
 
     const folder = folderOf(fields.folder);
     const inFolder = taken(titles, folder);
@@ -114,6 +120,7 @@ export function migrateV1(files: readonly TextFile[], existing: readonly TextFil
     notes.push({
       id,
       path: notePath(folder, title),
+      source: note.path,
       text: writeNote("", {
         id,
         tags: [...new Set(tags)],
@@ -130,7 +137,7 @@ export function migrateV1(files: readonly TextFile[], existing: readonly TextFil
     .sort(compare)
     .map((folder) => `${folder}/${KEEP_FILE}`);
 
-  return { notes, folders, removed: v1.map((file) => file.path), skipped };
+  return { notes, converted: convertedEarlier, folders, removed: v1.map((file) => file.path), skipped };
 }
 
 /** v1 wrote every file as one JSON object. */
