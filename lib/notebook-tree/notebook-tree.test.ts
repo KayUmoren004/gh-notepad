@@ -192,3 +192,20 @@ describe("labels", () => {
     expect(formatNoteCount(1284)).toBe("1,284 notes");
   });
 });
+
+describe("the Trash and the tree", () => {
+  it("leaves trashed notes and folders out of the tree, its counts and Recent", () => {
+    const trashed = { ...note(".trash/Projects/Plan.md", { updated: "2026-03-01T00:00:00.000Z" }), trashed: "2026-03-02T00:00:00.000Z" };
+    const kept = note("Projects/Kept.md", { updated: "2026-02-01T00:00:00.000Z" });
+    const [tree] = buildNotebookTrees([trashed, kept], {
+      folders: [
+        { notebook: "mira/my-notes", path: ".trash/Ideas", trashed: "2026-03-02T00:00:00.000Z" },
+        { notebook: "mira/my-notes", path: "Ideas", trashed: null },
+      ],
+    });
+    expect(tree.noteCount).toBe(1);
+    expect(tree.folders.map((folder) => folder.name)).toEqual(["Ideas", "Projects"]);
+    expect(tree.folders[1].notes.map((n) => n.title)).toEqual(["Kept"]);
+    expect(recentNotes([trashed, kept], 5).map((n) => n.title)).toEqual(["Kept"]);
+  });
+});

@@ -12,6 +12,8 @@ export interface SearchableNote {
   title: string;
   body: string;
   tags: readonly string[];
+  /** Set while the note is in the Trash: `update` leaves it out of the index. */
+  trashed?: string | null;
 }
 
 export interface SearchResult {
@@ -40,7 +42,8 @@ export interface NoteIndex {
   /**
    * Brings the index in line with the device store's notes, touching only what
    * changed: a note is re-indexed when its object is a new one (the store keeps
-   * unchanged notes' identity) and its searchable text differs.
+   * unchanged notes' identity) and its searchable text differs. Notes in the
+   * Trash are left out, as if they weren't there.
    */
   update(notes: ReadonlyMap<string, SearchableNote>): void;
   /** Title matches first (by prefix, tolerating a typo), then matches in the text, tags or folder. */
@@ -123,8 +126,12 @@ export function createNoteIndex(): NoteIndex {
     replace,
     remove,
     update(next) {
-      for (const id of [...notes.keys()]) if (!next.has(id)) remove(id);
+      for (const id of [...notes.keys()]) {
+        const note = next.get(id);
+        if (!note || note.trashed != null) remove(id);
+      }
       for (const [id, note] of next) {
+        if (note.trashed != null) continue;
         const indexed = notes.get(id);
         if (indexed === note) continue;
         if (indexed && sameText(indexed, note)) {

@@ -187,3 +187,22 @@ describe("with over a thousand notes", () => {
     expect(built).toBeLessThan(2_000);
   });
 });
+
+describe("searching and the Trash", () => {
+  it("takes a note out of the index when it is trashed, and back in when it is restored", () => {
+    const index = createNoteIndex();
+    const plan = note("Garden plan", "Raised beds.");
+    const notes = new Map([[plan.id, plan]]);
+    index.update(notes);
+    expect(index.search("garden")).toHaveLength(1);
+
+    notes.set(plan.id, { ...plan, trashed: "2026-03-02T00:00:00.000Z" });
+    index.update(notes);
+    expect(index.search("garden")).toHaveLength(0);
+    expect(index.size).toBe(0);
+
+    notes.set(plan.id, { ...plan });
+    index.update(notes);
+    expect(index.search("garden")).toHaveLength(1);
+  });
+});

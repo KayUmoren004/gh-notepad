@@ -8,6 +8,8 @@ export interface TreeNoteInput {
   /** `""` at the top level of the notebook. */
   folder: string;
   updated: string | null;
+  /** Set while the note is in the Trash: the tree and Recent leave it out. */
+  trashed?: string | null;
 }
 
 export interface TreeNote {
@@ -66,13 +68,15 @@ export function folderKey(notebook: string, path: string): string {
 export interface TreeFolderInput {
   notebook: string;
   path: string;
+  /** Set while the folder is in the Trash: the tree leaves it out. */
+  trashed?: string | null;
 }
 
 /**
  * The tree of every notebook: folders derived from the notes' paths and from
  * `folders` (the ones kept while empty), nested to any depth, folders before
  * notes and each sorted alphabetically. Notebooks in `notebooks` are included
- * even when they hold nothing yet.
+ * even when they hold nothing yet. Whatever is in the Trash is left out.
  */
 export function buildNotebookTrees(
   notes: Iterable<TreeNoteInput>,
@@ -107,8 +111,9 @@ export function buildNotebookTrees(
     return level;
   };
 
-  for (const folder of folders) folderAt(folder.notebook, folder.path, false);
+  for (const folder of folders) if (folder.trashed == null) folderAt(folder.notebook, folder.path, false);
   for (const note of notes) {
+    if (note.trashed != null) continue;
     tree(note.notebook).noteCount++;
     const level = folderAt(note.notebook, note.folder, true);
     level.notes.push({ kind: "note", id: note.id, notebook: note.notebook, title: note.title, folder: note.folder });
@@ -157,9 +162,12 @@ export function keysAbove(notebook: string, folder: string): string[] {
   return keys;
 }
 
-/** The last edited notes, newest first and at most `limit`; notes that were never edited don't count. */
-export function recentNotes<T extends { title: string; updated: string | null }>(notes: Iterable<T>, limit: number): T[] {
-  const edited = Array.from(notes).filter((note): note is T & { updated: string } => note.updated !== null);
+/** The last edited notes, newest first and at most `limit`; notes that were never edited, and notes in the Trash, don't count. */
+export function recentNotes<T extends { title: string; updated: string | null; trashed?: string | null }>(
+  notes: Iterable<T>,
+  limit: number,
+): T[] {
+  const edited = Array.from(notes).filter((note): note is T & { updated: string } => note.updated !== null && note.trashed == null);
   edited.sort((a, b) => (a.updated < b.updated ? 1 : a.updated > b.updated ? -1 : collator.compare(a.title, b.title)));
   return edited.slice(0, limit);
 }

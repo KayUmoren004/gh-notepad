@@ -4,6 +4,8 @@ export interface TaggedNote {
   tags: readonly string[];
   /** When the note was created: the oldest note's casing of a tag is the one kept. */
   created: string | null;
+  /** Set while the note is in the Trash: its tags don't count. */
+  trashed?: string | null;
 }
 
 /** One tag across every notebook on the device. */
@@ -52,10 +54,13 @@ export function cleanTags(tags: readonly string[]): string[] {
 
 /**
  * Every tag across `notes`, with how many notes carry it. Tags match without
- * regard to case; the casing shown is the one the oldest note used.
+ * regard to case; the casing shown is the one the oldest note used. Notes in
+ * the Trash don't count.
  */
 export function indexTags(notes: Iterable<TaggedNote>): TagIndex {
-  const ordered = Array.from(notes).sort(byCreated);
+  const ordered = Array.from(notes)
+    .filter((note) => note.trashed == null)
+    .sort(byCreated);
   const byKey = new Map<string, TagEntry>();
   for (const note of ordered) {
     const counted = new Set<string>();

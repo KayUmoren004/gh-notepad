@@ -93,3 +93,13 @@ describe("tags: filtering", () => {
     expect(filterByTags(notes, ["home", "missing"])).toEqual([]);
   });
 });
+
+describe("tags and the Trash", () => {
+  it("doesn't count trashed notes' tags, and never lists them under a tag", () => {
+    const index = indexTags([{ ...note(["home"]), trashed: "2026-03-02T00:00:00.000Z" }, note(["home", "work"]), note(["work"])]);
+    expect(index.tags.map((tag) => [tag.name, tag.count])).toEqual([
+      ["work", 2],
+      ["home", 1],
+    ]);
+  });
+});
