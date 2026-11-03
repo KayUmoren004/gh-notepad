@@ -158,7 +158,9 @@ export function createSyncEngine({
       failure = error;
       outcome = failedStatus(error);
     }
-    if (started) schedulePoll();
+    // Signed out, sync pauses: no polls or retries until the member signs in again (focus and reconnect still try).
+    if (started && outcome.state === "signed-out") timers.clearTimeout(pollTimer);
+    else if (started) schedulePoll();
     // Finished before anyone hears so: a sync asked for on hearing it starts afresh.
     running = null;
     setStatus(outcome);
@@ -266,6 +268,7 @@ export function createSyncEngine({
   }
 
   function onEdit() {
+    if (status.state === "signed-out") return;
     const now = timers.now();
     firstPendingEdit ??= now;
     // ~3 s after typing pauses, but never more than ~20 s after the first unsynced edit.
