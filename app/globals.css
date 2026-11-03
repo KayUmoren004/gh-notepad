@@ -414,4 +414,12 @@
   .rich-text .suggestion {
     @apply rounded-sm bg-muted;
   }
+
+  /* Task lists on a share page (`app/s`), as rendered on publish: the checkbox stands in for the bullet. */
+  .rich-text li:has(> input[type="checkbox"]) {
+    @apply -ml-6 list-none;
+  }
+  .rich-text li > input[type="checkbox"] {
+    @apply mr-2 size-4 align-[-2px] accent-primary;
+  }
 }

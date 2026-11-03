@@ -61,6 +61,12 @@ export const signOutMembers: Record<string, { first: string; second: string }> =
   phone: { first: "octo-signout-one-phone", second: "octo-signout-two-phone" },
 };
 
+/** Allowed members whose notes the share link spec publishes, one per Playwright project. */
+export const shareMembers: Record<string, string> = {
+  desktop: "octo-share-desktop",
+  phone: "octo-share-phone",
+};
+
 /**
  * Allowed members whose personal notebooks the title spec uses, one per
  * Playwright project, so a re-title of a fresh note there is its own doing.
@@ -96,6 +102,7 @@ export const appEnv = {
     ...Object.values(searchMembers).flatMap(({ notes, big }) => [notes, big]),
     ...Object.values(signOutMembers).flatMap(({ first, second }) => [first, second]),
     ...Object.values(titleMembers),
+    ...Object.values(shareMembers),
   ].join(","),
   GITHUB_API_BASE_URL: fakeGitHubUrl,
   GITHUB_OAUTH_BASE_URL: fakeGitHubUrl,

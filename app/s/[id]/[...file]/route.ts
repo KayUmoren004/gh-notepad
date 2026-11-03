@@ -14,7 +14,7 @@ export async function GET(_request: NextRequest, context: RouteContext<"/s/[id]/
   if (!isShareId(id) || !isAttachmentPath(path)) return new Response(null, { status: 404 });
   const stored = await shareStoreFromEnv().get(id, path);
   if (!stored) return new Response(null, { status: 404 });
-  return new Response(stored.bytes, {
+  return new Response(new Uint8Array(stored.bytes), {
     headers: {
       "content-type": stored.contentType,
       "content-length": String(stored.bytes.byteLength),

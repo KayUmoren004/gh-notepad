@@ -40,12 +40,15 @@ export function ShareDialog({ noteId, open, onOpenChange }: ShareDialogProps) {
   const [problem, setProblem] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    if (open) return;
-    setPhase("idle");
-    setProblem(null);
-    setCopied(false);
-  }, [open]);
+  /** Closing forgets the dialog's transient state: a confirmation left open, a problem, "Copied". */
+  function changeOpen(next: boolean) {
+    if (!next) {
+      setPhase("idle");
+      setProblem(null);
+      setCopied(false);
+    }
+    onOpenChange(next);
+  }
 
   useEffect(() => {
     if (!copied) return;
@@ -99,7 +102,7 @@ export function ShareDialog({ noteId, open, onOpenChange }: ShareDialogProps) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Share</DialogTitle>

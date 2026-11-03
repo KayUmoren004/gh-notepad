@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { isShareId, SHARE_NOTE_FILE, type PublishedNote } from "@/lib/share";
 import { shareStoreFromEnv } from "@/lib/share-store";
@@ -65,9 +66,9 @@ export default async function SharePage({ params }: PageProps<"/s/[id]">) {
         </article>
       </main>
       <footer className="mx-auto w-full max-w-2xl px-6 pb-8 pb-safe text-sm text-muted-foreground">
-        <a href="/" className="underline decoration-muted-foreground/60 underline-offset-2 hover:text-foreground">
+        <Link href="/" className="underline decoration-muted-foreground/60 underline-offset-2 hover:text-foreground">
           Shared from Notepad
-        </a>
+        </Link>
       </footer>
     </div>
   );

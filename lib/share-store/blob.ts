@@ -1,5 +1,5 @@
 import { BlobNotFoundError, del, get, list, put } from "@vercel/blob";
-import type { ShareFile, ShareStore } from "./store";
+import type { ShareStore } from "./store";
 
 /**
  * A share store on Vercel Blob. Every file is a private blob under

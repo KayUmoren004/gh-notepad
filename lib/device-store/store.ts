@@ -42,6 +42,8 @@ export interface Note {
   tags: string[];
   created: string | null;
   updated: string | null;
+  /** The note's share link id while it is shared, from its frontmatter. */
+  share: string | null;
   /** Its latest edits are stored on this device and survive a reload. */
   saved: boolean;
   /** This device's version matches the notebook's on GitHub. */
@@ -175,6 +177,11 @@ export interface DeviceStore {
    * frontmatter, so sync pushes it like any other edit.
    */
   setTags: (id: string, tags: readonly string[]) => void;
+  /**
+   * Marks the note shared under `share` (a share id), or not shared with
+   * `null`. The frontmatter field syncs like any edit, so other devices see it.
+   */
+  setShare: (id: string, share: string | null) => void;
 
   /**
    * Stores an image on this device, to be committed under `attachments/` with
@@ -565,6 +572,14 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
         return true;
       }),
 
+    setShare: (id, share) =>
+      edit(id, (row, fields) => {
+        if (fields.share === share) return false;
+        // Sharing isn't an edit to the note's content, so `updated` stays as it is.
+        row.text = writeNote(row.text, { share: share ?? "", id: row.key });
+        return true;
+      }),
+
     addAttachment: (notebook, image) => {
       const problem = imageProblem({ type: image.type, size: image.bytes.size });
       if (problem) throw new Error(problem);
@@ -702,6 +717,7 @@ function view({ row, persisted, parsed }: Entry): Note {
     tags: fields.tags,
     created: fields.created,
     updated: fields.updated,
+    share: fields.share,
     saved: persisted >= row.revision,
     synced: !isDirty(row),
   };

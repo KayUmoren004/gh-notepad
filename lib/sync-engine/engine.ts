@@ -6,6 +6,7 @@ import { batchMessage, planBatches } from "./batches";
 import { migrationUnits, planMigration, type MigrationReport, type PendingMigration } from "./migration";
 import { planPush } from "./push";
 import { reconcile, type RemoteNote } from "./reconcile";
+import { createShareRepublisher } from "./share";
 
 export type SyncStatus =
   /**
@@ -118,6 +119,8 @@ export function createSyncEngine({
   maxChangesPerCommit = 1000,
 }: SyncEngineOptions): SyncEngine {
   const listeners = new Set<() => void>();
+  // Share links: notes that land with a share id get their published copies replaced after the push (share.ts).
+  const shares = createShareRepublisher(store, remote);
   let status: SyncStatus = { state: "idle", lastSyncedAt: null };
   let running: Promise<void> | null = null;
   let followUp: Promise<void> | null = null;
@@ -263,7 +266,7 @@ export function createSyncEngine({
 
     for (let attempt = 1; ; attempt++) {
       await pull(id, ref);
-      if ((await push(id, ref)) !== "branch-moved") return;
+      if ((await push(id, ref)) !== "branch-moved") return shares.republish(id, ref);
       if (attempt >= MAX_ATTEMPTS) throw new Error("The notebook kept changing while syncing");
     }
   }
@@ -350,6 +353,7 @@ export function createSyncEngine({
         landed,
         batch.notes.map(({ id: noteId, path, text }) => ({ id: noteId, base: { path, text, sha: result.blobs[path] } })),
       );
+      shares.landed(id, batch.notes);
     }
     if (migration) {
       migrations.delete(id);

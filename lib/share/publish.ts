@@ -1,5 +1,5 @@
 import { attachmentContentType } from "@/lib/attachments";
-import type { MemberGitHub, NotebookLocation } from "@/lib/github-gateway";
+import type { MemberGitHub, NotebookLocation, RepositoryName } from "@/lib/github-gateway";
 import { readNote, titleOfPath } from "@/lib/notebook-format";
 import type { ShareFile, ShareStore } from "@/lib/share-store";
 import { renderShareHtml } from "./render";
@@ -30,7 +30,7 @@ export type PublishOutcome =
 
 export type RevokeOutcome = { status: "revoked" } | { status: "taken" };
 
-const notebookKey = ({ owner, repo }: NotebookLocation) => `${owner}/${repo}`.toLowerCase();
+const notebookKey = ({ owner, repo }: RepositoryName) => `${owner}/${repo}`.toLowerCase();
 
 async function publishedNote(store: ShareStore, id: string): Promise<PublishedNote | null> {
   const file = await store.get(id, SHARE_NOTE_FILE);
@@ -99,7 +99,7 @@ export async function revokeShare({
   id,
   store,
 }: {
-  notebook: NotebookLocation;
+  notebook: RepositoryName;
   id: string;
   store: ShareStore;
 }): Promise<RevokeOutcome> {

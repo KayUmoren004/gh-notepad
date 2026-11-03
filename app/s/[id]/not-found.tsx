@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 /** A share link that leads nowhere: revoked, mistyped, or never one. Answered with a 404. */
 export default function ShareNotFound() {
   return (
@@ -9,9 +11,9 @@ export default function ShareNotFound() {
         </p>
       </main>
       <footer className="mx-auto w-full max-w-2xl px-6 pb-8 pb-safe text-sm text-muted-foreground">
-        <a href="/" className="underline decoration-muted-foreground/60 underline-offset-2 hover:text-foreground">
+        <Link href="/" className="underline decoration-muted-foreground/60 underline-offset-2 hover:text-foreground">
           Shared from Notepad
-        </a>
+        </Link>
       </footer>
     </div>
   );
