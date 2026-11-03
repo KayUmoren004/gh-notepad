@@ -77,6 +77,25 @@ test("the landing page describes itself to search engines and link previews", as
   }
 });
 
+test("the pitch is on screen from the first paint", async ({ page }) => {
+  // Chromium never counts content that starts at opacity 0 as painted, so an
+  // entrance on the hero text would hide it from the largest contentful paint.
+  await page.goto("/");
+  const largest = await page.evaluate(
+    () =>
+      new Promise<{ text: string; inPreview: boolean } | null>((resolve) => {
+        new PerformanceObserver((list) => {
+          const entries = list.getEntries() as (PerformanceEntry & { element: Element | null })[];
+          const element = entries.at(-1)?.element;
+          resolve(element ? { text: element.textContent ?? "", inPreview: !!element.closest('[role="img"]') } : null);
+        }).observe({ type: "largest-contentful-paint", buffered: true });
+      }),
+  );
+  const hero = page.getByRole("region", { name: "Your notes, in your own GitHub" });
+  expect(largest?.inPreview).toBe(false);
+  await expect(hero.getByText(largest?.text ?? "no largest contentful paint", { exact: true })).toBeVisible();
+});
+
 test("the page rises into place once on load, then holds still", async ({ page }) => {
   await page.goto("/");
   const frames = await firstFrames(page);

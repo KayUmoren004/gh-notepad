@@ -39,21 +39,21 @@ export default async function LandingPage({ searchParams }: PageProps<"/">) {
       </header>
 
       <main className="flex-1">
-        {/* First-load motion: each block fades up in turn, once; reduced motion keeps only the fade. */}
         <section aria-labelledby="hero-title" className="mx-auto w-full max-w-6xl px-5 pt-10 text-center md:px-8 md:pt-20">
+          {/*
+           * The pitch and the sign-in button are there from the first paint: Chromium doesn't count content
+           * that starts at opacity 0 as painted. The one first-load motion is the preview rising into place.
+           */}
           <div className="mx-auto flex max-w-2xl flex-col items-center gap-5 md:gap-6">
-            <h1
-              id="hero-title"
-              className="animate-enter text-4xl font-semibold tracking-tight text-balance sm:text-5xl md:text-6xl"
-            >
+            <h1 id="hero-title" className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl md:text-6xl">
               Your notes,
               <br /> in your own GitHub
             </h1>
-            <p className="animate-enter text-lg text-pretty text-muted-foreground delay-50 md:text-xl">
+            <p className="text-lg text-pretty text-muted-foreground md:text-xl">
               Write in rich text. Every note is saved as a plain Markdown file in a private repository on your GitHub
               account, and it all keeps working offline.
             </p>
-            <div className="flex w-full animate-enter flex-col items-center gap-4 pt-2 delay-100">
+            <div className="flex w-full flex-col items-center gap-4 pt-2">
               {notice && (
                 <p role="alert" className="w-full max-w-sm rounded-lg bg-muted px-4 py-3 text-sm text-foreground">
                   {notice}
@@ -72,7 +72,7 @@ export default async function LandingPage({ searchParams }: PageProps<"/">) {
             </div>
           </div>
 
-          <AppPreview className="mx-auto mt-14 max-w-md animate-enter delay-150 md:mt-20 md:max-w-none md:mask-b-from-75%" />
+          <AppPreview className="mx-auto mt-14 max-w-md animate-enter delay-100 md:mt-20 md:max-w-none md:mask-b-from-75%" />
         </section>
 
         <FeatureGrid />
