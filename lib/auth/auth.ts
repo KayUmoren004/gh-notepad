@@ -7,7 +7,7 @@ import {
   type GitHubUser,
   type OAuthGrant,
 } from "@/lib/github-gateway";
-import { accessList, type AccessList } from "./access";
+import { accessList, admittedByInvitation, type AccessList } from "./access";
 import { randomUrlSafe, s256, safeEqual } from "./pkce";
 import { SESSION_COOKIE, sealSession, sessionCookieOptions, unsealSession, type Session } from "./session";
 
@@ -127,10 +127,18 @@ export function createAuth({ appUrl, sessionSecret, access, github }: AuthOption
 
       let grant: OAuthGrant;
       let user: GitHubUser;
+      let admitted: boolean;
       try {
         // GitHub checks the PKCE verifier: a code issued to another attempt is refused.
         grant = await github.exchangeCode({ code, redirectUri: callbackUrl, codeVerifier: attempt.verifier });
         user = await github.getAuthenticatedUser(grant.accessToken);
+        // Anyone the owner invited to one of their notebooks gets in too (ADR 0004).
+        admitted =
+          access.allows(user.login) ||
+          (await admittedByInvitation(
+            github.forMember({ login: user.login, accessToken: grant.accessToken }),
+            access.owner,
+          ));
       } catch (error) {
         if (!(error instanceof GitHubError)) throw error;
         if (error.code !== "bad_verification_code") {
@@ -139,7 +147,7 @@ export function createAuth({ appUrl, sessionSecret, access, github }: AuthOption
         return finishAttempt("/?sign-in=failed");
       }
 
-      if (!access.allows(user.login)) {
+      if (!admitted) {
         return finishAttempt(`/invite-only?${new URLSearchParams({ login: user.login })}`);
       }
 

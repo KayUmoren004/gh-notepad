@@ -31,7 +31,8 @@ export default async function InviteOnlyPage({ searchParams }: PageProps<"/invit
             ) : (
               "Your GitHub account isn't on its guest list."
             )}{" "}
-            Ask the person who runs it to add your GitHub username, then sign in again.
+            Ask the person who runs it to add your GitHub username or invite you to one of their notebooks, then
+            sign in again.
           </p>
         </div>
 

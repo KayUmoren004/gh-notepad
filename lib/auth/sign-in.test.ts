@@ -1,13 +1,13 @@
 import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
 import { CookieJar } from "@/test/cookie-jar";
-import { createFakeGitHub } from "@/test/fake-github";
+import { createFakeGitHub, type FakeGitHub } from "@/test/fake-github";
 import { authFromEnv, type Auth } from ".";
 
 const appUrl = "https://notes.example";
 
-function setUp({ expiringTokens = false } = {}) {
-  const github = createFakeGitHub();
+function setUp({ expiringTokens = false, now }: { expiringTokens?: boolean; now?: () => number } = {}) {
+  const github = createFakeGitHub({ now });
   const app = github.addOAuthApp({ callbackUrl: `${appUrl}/api/auth/callback`, expiringTokens });
   for (const login of ["octo-owner", "Octo-Member", "octo-stranger"]) github.addUser({ login });
 
@@ -113,6 +113,88 @@ describe("signing in with GitHub", () => {
 
     expect(response.headers.get("location")).toBe(`${appUrl}/?sign-in=cancelled`);
     expect(await visitor.session()).toBeNull();
+  });
+});
+
+describe("signing in by invitation to one of the owner's notebooks", () => {
+  /** A shared notebook: a repository tagged with the notebook topic. */
+  const notebook = { topics: ["gh-notepad-notebook"], files: { "README.md": "# notebook\n" } };
+
+  async function signIn(github: FakeGitHub, auth: Auth, login: string) {
+    const visitor = browser(auth);
+    const response = await visitor.returnFromGitHub(await github.authorize(await visitor.startSignIn(), { login }));
+    return { location: response.headers.get("location"), session: await visitor.session() };
+  }
+
+  it("lets in a stranger with a pending invitation, accepting it so they land in the notebook", async () => {
+    const { github, auth } = setUp();
+    github.addRepo({ owner: "octo-owner", name: "book-club", ...notebook });
+    github.invite("octo-owner", "book-club", "octo-stranger");
+
+    const { location, session } = await signIn(github, auth, "octo-stranger");
+
+    expect(location).toBe(`${appUrl}/notes`);
+    expect(session?.member).toMatchObject({ login: "octo-stranger" });
+    expect(github.collaborators("octo-owner", "book-club")).toEqual(["octo-stranger"]);
+    expect(github.invitations("octo-owner", "book-club")).toEqual([]);
+  });
+
+  it("lets in a stranger who already accepted an invitation", async () => {
+    const { github, auth } = setUp();
+    github.addRepo({ owner: "octo-owner", name: "book-club", ...notebook, collaborators: ["octo-stranger"] });
+
+    const { location, session } = await signIn(github, auth, "octo-stranger");
+
+    expect(location).toBe(`${appUrl}/notes`);
+    expect(session?.member).toMatchObject({ login: "octo-stranger" });
+  });
+
+  it("shows the invite-only screen to a stranger invited only by another member, and leaves the invitation alone", async () => {
+    const { github, auth } = setUp();
+    github.addRepo({ owner: "Octo-Member", name: "reading", ...notebook });
+    github.addRepo({ owner: "Octo-Member", name: "recipes", ...notebook, collaborators: ["octo-stranger"] });
+    github.invite("Octo-Member", "reading", "octo-stranger");
+
+    const { location, session } = await signIn(github, auth, "octo-stranger");
+
+    expect(location).toBe(`${appUrl}/invite-only?login=octo-stranger`);
+    expect(session).toBeNull();
+    expect(github.invitations("Octo-Member", "reading")).toHaveLength(1);
+    expect(github.collaborators("Octo-Member", "reading")).toEqual([]);
+  });
+
+  it("doesn't count access to an owner's repository that isn't a notebook", async () => {
+    const { github, auth } = setUp();
+    github.addRepo({ owner: "octo-owner", name: "some-code", collaborators: ["octo-stranger"] });
+
+    const { location } = await signIn(github, auth, "octo-stranger");
+
+    expect(location).toBe(`${appUrl}/invite-only?login=octo-stranger`);
+  });
+
+  it("doesn't count an invitation that expired", async () => {
+    let now = Date.parse("2026-11-03T12:00:00Z");
+    const { github, auth } = setUp({ now: () => now });
+    github.addRepo({ owner: "octo-owner", name: "book-club", ...notebook });
+    github.invite("octo-owner", "book-club", "octo-stranger");
+    now += 8 * 24 * 60 * 60 * 1000;
+
+    const { location } = await signIn(github, auth, "octo-stranger");
+
+    expect(location).toBe(`${appUrl}/invite-only?login=octo-stranger`);
+    expect(github.collaborators("octo-owner", "book-club")).toEqual([]);
+  });
+
+  it("leaves allowlisted members' invitations for them to accept in the app", async () => {
+    const { github, auth } = setUp();
+    github.addRepo({ owner: "octo-owner", name: "book-club", ...notebook });
+    github.invite("octo-owner", "book-club", "Octo-Member");
+
+    const { location } = await signIn(github, auth, "Octo-Member");
+
+    expect(location).toBe(`${appUrl}/notes`);
+    expect(github.invitations("octo-owner", "book-club")).toHaveLength(1);
+    expect(github.collaborators("octo-owner", "book-club")).toEqual([]);
   });
 });
 
