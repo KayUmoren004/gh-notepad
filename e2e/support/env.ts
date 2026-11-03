@@ -37,4 +37,6 @@ export const appEnv = {
   ALLOWED_GITHUB_USERS: members.allowed,
   GITHUB_API_BASE_URL: fakeGitHubUrl,
   GITHUB_OAUTH_BASE_URL: fakeGitHubUrl,
+  // Serves the component pages under /dev (the rich text mode harness) from the production build.
+  ENABLE_DEV_ROUTES: "1",
 };

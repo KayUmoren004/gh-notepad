@@ -23,24 +23,25 @@ test("a note is saved on the device, synced, still there after a reload, and on 
   await page.keyboard.press("Enter");
   const body = page.getByRole("textbox", { name: "Note text" });
   await expect(body).toBeFocused();
-  await page.keyboard.type("- Milk\n- Bread");
+  // Rich text mode turns the typed Markdown into a list as it goes.
+  await page.keyboard.type("- Milk\nBread");
 
   const status = page.getByRole("status");
   await expect(status).toHaveText("Synced", { timeout: 20_000 });
   // Synced means the notebook on GitHub has it: a Markdown file named after the title.
   const files = await fakeGitHub.files(members.allowed, "my-notes");
-  expect(files[`${title}.md`]).toMatch(/^---\nid: [0-9a-f-]{36}\n[\s\S]*\n---\n- Milk\n- Bread$/);
+  expect(files[`${title}.md`]).toMatch(/^---\nid: [0-9a-f-]{36}\n[\s\S]*\n---\n- Milk\n- Bread\n$/);
 
   await page.reload();
   await page.getByRole("button", { name: title }).click();
   await expect(page.getByRole("textbox", { name: "Title" })).toHaveValue(title);
-  await expect(page.getByRole("textbox", { name: "Note text" })).toHaveValue("- Milk\n- Bread");
+  await expect(page.getByRole("textbox", { name: "Note text" }).getByRole("listitem")).toHaveText(["Milk", "Bread"]);
   await expect(page.getByRole("status")).toHaveText("Synced");
 
   const phone = await signInOnAnotherDevice(members.allowed);
   await expect(phone).toHaveURL("/notes");
   await phone.getByRole("button", { name: title }).click({ timeout: 20_000 });
-  await expect(phone.getByRole("textbox", { name: "Note text" })).toHaveValue("- Milk\n- Bread");
+  await expect(phone.getByRole("textbox", { name: "Note text" }).getByRole("listitem")).toHaveText(["Milk", "Bread"]);
   await expect(phone.getByRole("status")).toHaveText("Synced");
 });
 
@@ -59,7 +60,7 @@ test("an edit on one device shows up on the other without a reload", async ({
 
   const other = await signInOnAnotherDevice(members.allowed);
   await other.getByRole("button", { name: title }).click({ timeout: 20_000 });
-  await expect(other.getByRole("textbox", { name: "Note text" })).toHaveValue("First draft");
+  await expect(other.getByRole("textbox", { name: "Note text" })).toHaveText("First draft");
 
   await page.getByRole("textbox", { name: "Note text" }).press("End");
   await page.keyboard.type(", revised");
@@ -68,7 +69,7 @@ test("an edit on one device shows up on the other without a reload", async ({
   // The other device pulls when it regains focus (and periodically while visible).
   await other.bringToFront();
   await other.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await expect(other.getByRole("textbox", { name: "Note text" })).toHaveValue("First draft, revised", {
+  await expect(other.getByRole("textbox", { name: "Note text" })).toHaveText("First draft, revised", {
     timeout: 20_000,
   });
 });
