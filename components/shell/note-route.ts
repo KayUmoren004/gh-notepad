@@ -64,5 +64,5 @@ export function useNoteRoute(): NoteRoute {
     else go(NOTES);
   }, []);
 
-  return { noteId, open, close };
+  return useMemo(() => ({ noteId, open, close }), [noteId, open, close]);
 }
