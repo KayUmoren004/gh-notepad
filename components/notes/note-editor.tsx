@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { HistoryButton, HistoryPanel, useHistoryPanel } from "@/components/history";
 import { RichTextMode, type RichTextModeHandle } from "@/components/rich-text-mode";
 import { TopBar } from "@/components/shell";
 import { ModeToggle, SourceMode } from "@/components/source-mode";
@@ -55,6 +56,7 @@ export function NoteEditor({
   const [mode, setMode] = useState<EditingMode>(() => initialMode(deviceStorage(), login, noteId, note?.body ?? ""));
   // After a switch: the cursor to put in the other mode as soon as it exists.
   const carried = useRef<{ anchor: CursorAnchor; focus: boolean } | null>(null);
+  const history = useHistoryPanel();
 
   useEffect(() => {
     if (!focusTitle) return;
@@ -109,9 +111,11 @@ export function NoteEditor({
         {/* The note's actions: the mode toggle now, history, share and more as their tickets land. */}
         <div data-slot="note-actions" className="flex items-center gap-0.5">
           <ModeToggle mode={mode} onChange={switchMode} />
+          <HistoryButton open={history.open} onToggle={() => history.toggle()} />
         </div>
       </TopBar>
 
+      <div className="flex min-h-0 flex-1">
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-safe">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-6 pt-3 pb-24 md:pt-14">
           <input
@@ -154,6 +158,8 @@ export function NoteEditor({
             />
           )}
         </div>
+      </div>
+      <HistoryPanel note={note} open={history.open} instant={history.instant} onClose={() => history.close()} imageSrc={images.editorProps.imageSrc} />
       </div>
     </article>
   );

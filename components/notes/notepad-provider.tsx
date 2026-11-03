@@ -3,13 +3,15 @@
 import { createContext, use, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { openDeviceStore, type Account, type DeviceStore, type Note } from "@/lib/device-store";
 import { buildNotebookTrees, recentNotes, type NotebookTree } from "@/lib/notebook-tree";
-import { createRemote } from "@/lib/remote";
+import { createRemote, type Remote } from "@/lib/remote";
 import { createSyncEngine, type SyncEngine, type SyncStatus } from "@/lib/sync-engine";
 
-/** The app's client side for one signed-in member: their device store and its sync engine. */
+/** The app's client side for one signed-in member: their device store, its sync engine, and the remote both reach GitHub through. */
 export interface Notepad {
   store: DeviceStore;
   engine: SyncEngine;
+  /** For reads that aren't part of sync, such as a note's history. */
+  remote: Remote;
 }
 
 const NotepadContext = createContext<Notepad | null>(null);
@@ -40,9 +42,10 @@ export function NotepadProvider({
           void store.close();
           return;
         }
-        const engine = createSyncEngine({ store, remote: createRemote() });
+        const remote = createRemote();
+        const engine = createSyncEngine({ store, remote });
         engine.start();
-        opened = { store, engine };
+        opened = { store, engine, remote };
         setNotepad(opened);
       },
       (error: unknown) => {
