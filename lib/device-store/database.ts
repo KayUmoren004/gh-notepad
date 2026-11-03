@@ -34,6 +34,19 @@ export interface NotebookRow {
   head: string | null;
 }
 
+/** An attachment this device holds: inserted here (pending until a push commits it), kept for showing offline. */
+export interface AttachmentRow {
+  notebook: string;
+  /** Its path in the notebook: `attachments/<id>.<ext>`. */
+  path: string;
+  type: string;
+  bytes: Blob;
+  /** Git blob SHA once the bytes are stored on GitHub, which happens before the commit that adds the file. */
+  sha: string | null;
+  /** Committed to the notebook. */
+  synced: boolean;
+}
+
 export interface DatabaseOptions {
   indexedDB?: IDBFactory;
   IDBKeyRange?: typeof IDBKeyRange;
@@ -43,9 +56,11 @@ export interface DatabaseOptions {
 export class NotepadDatabase extends Dexie {
   notes!: Table<NoteRow, string>;
   notebooks!: Table<NotebookRow, string>;
+  attachments!: Table<AttachmentRow, [string, string]>;
 
   constructor(accountId: number, options: DatabaseOptions = {}) {
     super(`gh-notepad-account-${accountId}`, options);
     this.version(1).stores({ notes: "key, notebook", notebooks: "id" });
+    this.version(2).stores({ notes: "key, notebook", notebooks: "id", attachments: "[notebook+path], notebook" });
   }
 }
