@@ -48,5 +48,5 @@ test("notes from v1 are converted on sign-in, and files that couldn't be read ar
   await expect(notice).toBeHidden();
   await page.getByRole("button", { name: title }).click();
   await expect(page.getByRole("textbox", { name: "Title" })).toHaveValue(title);
-  await expect(page.getByRole("textbox", { name: "Note text" })).toHaveValue("Written in v1");
+  await expect(page.getByRole("textbox", { name: "Note text" })).toHaveText("Written in v1");
 });
