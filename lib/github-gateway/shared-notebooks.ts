@@ -1,5 +1,6 @@
 import "server-only";
 import { GitHubError, record, text, type ApiCall } from "./http";
+import { PERSONAL_NOTEBOOK } from "./notebooks";
 
 /**
  * The GitHub side of shared notebooks (ADR 0004, research §6): creating them,
@@ -10,9 +11,6 @@ import { GitHubError, record, text, type ApiCall } from "./http";
 
 /** The topic that marks a repository as a notebook. GitHub saves topics lowercase. */
 export const NOTEBOOK_TOPIC = "gh-notepad-notebook";
-
-/** The personal notebook's repository name; it is a notebook whether or not it carries the topic. */
-const PERSONAL_NOTEBOOK_NAME = "my-notes";
 
 const SHARED_NOTEBOOK_DESCRIPTION = "A shared notebook, kept by gh-notepad";
 
@@ -141,7 +139,8 @@ export function sharedNotebooksGitHub(api: ApiCall, login: string): SharedNotebo
     if (!owner || !repo || !branch) throw new GitHubError("Unexpected repository response", 502);
     const topics = Array.isArray(body.topics) ? body.topics : [];
     const owned = sameLogin(owner, login);
-    const personal = owned && repo.toLowerCase() === PERSONAL_NOTEBOOK_NAME;
+    // The personal notebook is a notebook whether or not it carries the topic.
+    const personal = owned && repo.toLowerCase() === PERSONAL_NOTEBOOK;
     if (!personal && !topics.includes(NOTEBOOK_TOPIC)) return null;
     return { owner, repo, branch, kind: personal ? "personal" : "shared", role: owned ? "owner" : "collaborator" };
   }

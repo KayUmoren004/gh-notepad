@@ -4,6 +4,7 @@ import { authFromEnv, type CookieReader, type Session } from "@/lib/auth";
 import {
   gatewayFromEnv,
   GitHubError,
+  PERSONAL_NOTEBOOK,
   type Collaborator,
   type GitHubGateway,
   type Notebook,
@@ -104,7 +105,6 @@ const ACCOUNT = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
 /** GitHub's repository name rule; GitHub would silently rewrite anything else. */
 const REPOSITORY = /^[A-Za-z0-9._-]{1,100}$/;
 const INVITATION_ID = /^[1-9][0-9]{0,15}$/;
-const PERSONAL_NOTEBOOK_NAME = "my-notes";
 
 class ApiFailure extends Error {
   constructor(
@@ -169,7 +169,7 @@ export function createSharedNotebooksApi({ appUrl, readSession, github }: Shared
   /** The shared notebook a route names. The member's personal notebook is never shared. */
   function sharedNotebook(member: string, owner: string, repo: string): NotebookRepository {
     const notebook = { owner: login(owner, "account"), repo: repositoryName(repo) };
-    if (sameLogin(notebook.owner, member) && notebook.repo.toLowerCase() === PERSONAL_NOTEBOOK_NAME) {
+    if (sameLogin(notebook.owner, member) && notebook.repo.toLowerCase() === PERSONAL_NOTEBOOK) {
       throw invalid("Your personal notebook stays private");
     }
     return notebook;
@@ -186,7 +186,7 @@ export function createSharedNotebooksApi({ appUrl, readSession, github }: Shared
 
     if (path.length === 0 && method === "POST") {
       const name = repositoryName((await jsonBody(request)).name);
-      if (name.toLowerCase() === PERSONAL_NOTEBOOK_NAME) throw invalid(`${PERSONAL_NOTEBOOK_NAME} is your personal notebook`);
+      if (name.toLowerCase() === PERSONAL_NOTEBOOK) throw invalid(`${PERSONAL_NOTEBOOK} is your personal notebook`);
       const outcome = await gitHub.createSharedNotebook(name);
       if (outcome.status === "name-taken") throw new ApiFailure(409, "name_taken", `You already have a repository named ${name}`);
       const created: NotebookResponse = { notebook: outcome.notebook };
