@@ -1,5 +1,21 @@
+import type { Page } from "@playwright/test";
 import { appUrl } from "./support/env";
 import { expect, test } from "./support/fixtures";
+
+/** Freezes every animation on its first frame and reports what each animated element looks like there. */
+function firstFrames(page: Page) {
+  return page.evaluate(() =>
+    document.getAnimations().map((animation) => {
+      animation.pause();
+      animation.currentTime = 0;
+      const style = getComputedStyle((animation.effect as KeyframeEffect).target as Element);
+      return {
+        opacity: Number(style.opacity),
+        moved: style.transform !== "none" && style.transform !== "matrix(1, 0, 0, 1, 0, 0)",
+      };
+    }),
+  );
+}
 
 test("a signed-out visitor learns what the notepad is and how to get in", async ({ page }) => {
   await page.goto("/");
@@ -45,4 +61,30 @@ test("the landing page describes itself to search engines and link previews", as
     // A PNG's IHDR chunk holds its width and height at bytes 16 and 20.
     expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1200, 630]);
   }
+});
+
+test("the page rises into place once on load, then holds still", async ({ page }) => {
+  await page.goto("/");
+  const frames = await firstFrames(page);
+  expect(frames.length).toBeGreaterThan(0);
+  for (const frame of frames) expect(frame).toEqual({ opacity: 0, moved: true });
+
+  await page.goto("/");
+  const settled = () =>
+    page.evaluate(() => document.getAnimations().every((animation) => animation.playState === "finished"));
+  await expect.poll(settled, { timeout: 1_000 }).toBe(true);
+
+  // Nothing waits for the visitor to scroll, and nothing loops.
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await page.waitForTimeout(300);
+  expect(await settled()).toBe(true);
+});
+
+test("with reduced motion the entrance only fades", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+
+  const frames = await firstFrames(page);
+  expect(frames.length).toBeGreaterThan(0);
+  for (const frame of frames) expect(frame).toEqual({ opacity: 0, moved: false });
 });
