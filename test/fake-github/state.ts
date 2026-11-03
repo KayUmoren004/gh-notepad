@@ -173,6 +173,16 @@ export function accessTokensFor(state: FakeState, login: string): string[] {
     .map((token) => token.token);
 }
 
+/** Revokes every access and refresh token issued to `login`, as when they revoke the app on github.com. */
+export function revokeAccessTokens(state: FakeState, login: string): void {
+  for (const [key, token] of state.accessTokens) {
+    if (token.login.toLowerCase() === login.toLowerCase()) state.accessTokens.delete(key);
+  }
+  for (const [key, token] of state.refreshTokens) {
+    if (token.login.toLowerCase() === login.toLowerCase()) state.refreshTokens.delete(key);
+  }
+}
+
 /** Issues an access token for `login` directly, as if they had authorized an app. */
 export function issueAccessToken(state: FakeState, login: string, scopes: string[] = ["repo", "read:user"]): string {
   const user = findUser(state, login);

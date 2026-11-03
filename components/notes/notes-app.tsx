@@ -9,6 +9,7 @@ import { MigrationNotice } from "./migration-notice";
 import { NoteEditor } from "./note-editor";
 import { NoteList } from "./note-list";
 import { NotepadProvider, useNotepad, useNotes } from "./notepad-provider";
+import { SyncNotices } from "./sync-notices";
 
 /**
  * The notes screen for this slice: a flat list beside the open note (on small
@@ -59,6 +60,7 @@ function Notes() {
           </Button>
         </div>
         <MigrationNotice className="mx-3 mb-2" />
+        <SyncNotices className="mx-3 mb-2" onOpen={show} />
         <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <NoteList notes={notes} openId={open?.id ?? null} onOpen={show} />
         </nav>

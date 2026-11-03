@@ -11,6 +11,7 @@ import {
   addOAuthApp,
   addRepo,
   addUser,
+  authenticate,
   commitFiles,
   commitLog,
   createState,
@@ -21,6 +22,7 @@ import {
   issueAccessToken,
   readFileBytes,
   readFiles,
+  revokeAccessTokens,
   type FakeCommitSummary,
   type FakeInvitation,
   type FakeOAuthApp,
@@ -73,6 +75,8 @@ export interface FakeGitHub {
   accessTokensFor: (login: string) => string[];
   /** Issues a token for `login` without the OAuth dance, for tests that start signed in. */
   issueAccessToken: (login: string, scopes?: string[]) => string;
+  /** Plays `login` revoking the app on github.com: every token issued to them stops working. */
+  revokeAccessTokens: (login: string) => void;
 
   /**
    * Seeds a repository (and its owner). With `files` it has an initial commit
@@ -118,6 +122,7 @@ export function createFakeGitHub(options: FakeGitHubOptions = {}): FakeGitHub {
     addOAuthApp: (app) => addOAuthApp(state, app),
     accessTokensFor: (login) => accessTokensFor(state, login),
     issueAccessToken: (login, scopes) => issueAccessToken(state, login, scopes),
+    revokeAccessTokens: (login) => revokeAccessTokens(state, login),
     addRepo: (repo) => addRepo(state, repo),
     repo: (owner, name) => findRepo(state, owner, name),
     commitFiles: (owner, name, change) => commitFiles(state, requireRepo(state, owner, name), change),
@@ -171,6 +176,15 @@ async function route(state: FakeState, request: Request): Promise<Response> {
 }
 
 async function dispatch(state: FakeState, request: Request, url: URL): Promise<Response> {
+  // A token GitHub doesn't know (revoked, expired) fails every REST request, whatever it asks for.
+  if (
+    /^(?:bearer|token)\s/i.test(request.headers.get("authorization") ?? "") &&
+    !url.pathname.startsWith("/login/") &&
+    !url.pathname.startsWith("/_fake/") &&
+    !authenticate(state, request)
+  ) {
+    return apiError(401, "Bad credentials");
+  }
   for (const candidate of routes) {
     if (candidate.method !== request.method) continue;
     const params = matchPath(candidate.path, url.pathname);
