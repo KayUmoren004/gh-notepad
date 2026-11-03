@@ -33,6 +33,16 @@ export const shellMembers: Record<string, { tree: string; big: string }> = {
 };
 
 /**
+ * Allowed members whose personal notebooks the search specs seed, one set per
+ * Playwright project: `notes` a few notes with words to find, `big` over a
+ * thousand notes to type against.
+ */
+export const searchMembers: Record<string, { notes: string; big: string }> = {
+  desktop: { notes: "octo-search-desktop", big: "octo-search-big-desktop" },
+  phone: { notes: "octo-search-phone", big: "octo-search-big-phone" },
+};
+
+/**
  * Two allowed members per Playwright project who share a browser in the sign-out
  * flows, so their notebooks are theirs alone. Neither login starts with the
  * other's: the fake's account chooser is searched by name.
@@ -64,6 +74,7 @@ export const appEnv = {
     members.allowed,
     ...Object.values(v1Members),
     ...Object.values(shellMembers).flatMap(({ tree, big }) => [tree, big]),
+    ...Object.values(searchMembers).flatMap(({ notes, big }) => [notes, big]),
     ...Object.values(signOutMembers).flatMap(({ first, second }) => [first, second]),
   ].join(","),
   GITHUB_API_BASE_URL: fakeGitHubUrl,

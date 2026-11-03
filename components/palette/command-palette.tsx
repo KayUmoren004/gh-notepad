@@ -61,7 +61,7 @@ export function CommandPalette({ open, onOpenChange, onOpenNote, onNewNote }: Co
             // A phone: the whole screen, the input at the top where the keyboard can't cover it.
             "fixed top-0 left-0 z-50 flex h-dvh w-full flex-col bg-popover text-popover-foreground outline-none pt-safe pb-safe px-safe",
             // A desktop: a centred box in the upper part of the screen. No open or close animation.
-            "md:top-[12vh] md:left-1/2 md:h-auto md:max-h-[min(32rem,76vh)] md:w-[36rem] md:max-w-[calc(100vw-2rem)] md:-translate-x-1/2 md:rounded-xl md:p-0 md:shadow-2xl md:ring-1 md:ring-foreground/10",
+            "md:top-[12vh] md:left-1/2 md:h-auto md:max-h-[min(32rem,76vh)] md:w-[36rem] md:max-w-[calc(100vw-2rem)] md:-translate-x-1/2 md:rounded-xl md:shadow-2xl md:ring-1 md:ring-foreground/10",
           )}
         >
           <Palette index={index} input={input} onOpenChange={onOpenChange} onOpenNote={onOpenNote} onNewNote={onNewNote} />
@@ -208,7 +208,7 @@ function Palette({
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain scroll-py-2 p-2 [&_mark]:rounded-xs [&_mark]:bg-ring/35 [&_mark]:text-inherit"
       >
         {noNotes && (
-          <p className="px-2 py-6 text-center text-sm text-pretty text-muted-foreground" style={{ overflowWrap: "anywhere" }}>
+          <p className="px-2 py-6 text-center text-sm text-pretty wrap-anywhere text-muted-foreground">
             No notes match “{trimmed}”.
           </p>
         )}
@@ -296,7 +296,7 @@ function marked(segments: Segment[]): ReactNode {
 function Hint({ keys, children }: { keys: string; children: ReactNode }) {
   return (
     <span className="flex items-center gap-1">
-      <kbd className="rounded-sm bg-muted px-1 font-mono text-[11px] text-foreground/80">{keys}</kbd>
+      <kbd className="rounded-sm bg-muted px-1 font-mono text-xs text-foreground/80">{keys}</kbd>
       {children}
     </span>
   );
