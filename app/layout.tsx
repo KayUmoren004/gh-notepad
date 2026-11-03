@@ -9,6 +9,16 @@ export const metadata: Metadata = {
   title: { default: "Notepad", template: "%s · Notepad" },
   description: "An invite-only notepad whose notes are Markdown files in your own GitHub repositories.",
   applicationName: "Notepad",
+  // Drawn by scripts/generate-icons.mjs; the manifest's icons come from app/manifest.ts.
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "32x32" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
+  // Installed on iOS, the status bar floats over the page, whose chrome pads itself clear (`pt-safe`).
+  appleWebApp: { capable: true, title: "Notepad", statusBarStyle: "black-translucent" },
 };
 
 export const viewport: Viewport = {
