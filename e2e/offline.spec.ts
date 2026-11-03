@@ -16,6 +16,9 @@ test("the signed-in app opens offline after one online visit", async ({ page, co
   expect(response?.fromServiceWorker()).toBe(true);
   await expect(page.locator("[data-app-shell]")).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  // The client-rendered notes screen booted from the precached code.
+  await page.getByRole("button", { name: "New note" }).click();
+  await expect(page.getByRole("textbox", { name: "Title" })).toBeFocused();
 });
 
 test("after signing out, the app no longer opens offline as the member", async ({ page, context, signInAs }) => {
@@ -71,12 +74,19 @@ test("authenticated API responses are never stored or served by the service work
   expect(await get("/api/probe/notes")).toBe(200);
   expect(await get("/api/probe/notes?since=1")).toBe(200);
   await page.goto("/api/probe/document");
-  await page.goto("/notes");
+
+  // The app's own authenticated traffic: booting under the worker, it pulls the personal notebook.
+  const [headResponse] = await Promise.all([
+    page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/head") && response.status() < 400),
+    page.goto("/notes"),
+  ]);
+  const headUrl = headResponse.url();
 
   await context.unroute("**/api/probe/**");
   await context.setOffline(true);
   expect(await get("/api/probe/notes")).toBe("unreachable");
   expect(await get("/api/probe/notes?since=1")).toBe("unreachable");
+  expect(await get(headUrl)).toBe("unreachable");
 
   const cachedApiUrls = await page.evaluate(async () => {
     const urls: string[] = [];
