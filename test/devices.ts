@@ -17,6 +17,12 @@ import { createFakeGitHub, type FakeGitHub } from "./fake-github";
 
 const appUrl = "https://notes.example";
 
+/**
+ * What the device's network is doing: `offline` fails every request the way a
+ * browser does, `failing` reaches the app but GitHub answers nothing useful.
+ */
+export type Network = "online" | "offline" | "failing";
+
 /** One browser signed in as a member: the app's client side as it runs on that device. */
 export interface Device {
   login: string;
@@ -27,6 +33,8 @@ export interface Device {
   engine: SyncEngine;
   /** Runs a sync to completion (joining one already running, and its follow-up). */
   sync: () => Promise<void>;
+  /** Takes the device offline, or puts it behind a GitHub that keeps failing; `online` again when done. */
+  setNetwork: (network: Network) => void;
   /** Closes the app and opens it again on the same device: same IndexedDB, same cookies. */
   reopen: () => Promise<Device>;
 }
@@ -90,9 +98,14 @@ export function createWorld({ members = ["octo-member"] }: { members?: string[] 
   ): Promise<Device> {
     const session = await auth.readSession(jar);
     if (!session) throw new Error("The device isn't signed in");
+    let network: Network = "online";
     const remote = createRemote({
       baseUrl: appUrl,
       fetch: async (input, init) => {
+        if (network === "offline") throw new TypeError("Failed to fetch");
+        if (network === "failing") {
+          return Response.json({ error: "github_unavailable", message: "GitHub couldn't be reached" }, { status: 502 });
+        }
         const headers = new Headers(init?.headers);
         headers.set("cookie", jar.header());
         const request = new NextRequest(new URL(String(input), appUrl), {
@@ -112,6 +125,9 @@ export function createWorld({ members = ["octo-member"] }: { members?: string[] 
       store,
       engine,
       sync: () => engine.sync(),
+      setNetwork: (next) => {
+        network = next;
+      },
       reopen: async () => {
         engine.stop();
         await store.close();
@@ -132,18 +148,21 @@ export function createWorld({ members = ["octo-member"] }: { members?: string[] 
       return open(jar, sameBrowserAs?.indexedDB ?? new IDBFactory(), options);
     },
 
-    callApi: (path, { method = "GET", body, headers = {}, as } = {}) =>
-      api.handle(
+    callApi: (path, { method = "GET", body, headers = {}, as } = {}) => {
+      // Bytes (an attachment) go as they are, under the caller's content type; anything else is JSON.
+      const raw = body instanceof Uint8Array || body instanceof Blob;
+      return api.handle(
         new NextRequest(new URL(path, appUrl), {
           method,
           headers: {
             ...(as ? { cookie: as.cookies.header() } : {}),
-            ...(body === undefined ? {} : { "content-type": "application/json" }),
+            ...(body === undefined || raw ? {} : { "content-type": "application/json" }),
             ...headers,
           },
-          body: body === undefined ? undefined : JSON.stringify(body),
+          body: body === undefined ? undefined : raw ? (body as BodyInit) : JSON.stringify(body),
         }),
-      ),
+      );
+    },
 
     holdGitHub: (matches) => {
       let reached!: () => void;

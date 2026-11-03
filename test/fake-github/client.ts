@@ -23,6 +23,8 @@ export interface FakeGitHubControl {
   ) => Promise<{ sha: string }>;
   /** Every file on the default branch, as text, by path. */
   files: (owner: string, name: string) => Promise<Record<string, string>>;
+  /** One file on the default branch as bytes (an attachment), or `null` if there is none. */
+  fileBytes: (owner: string, name: string, path: string) => Promise<Uint8Array | null>;
   /**
    * The owner of `owner/name` invites `invitee` (seeded if new). Idempotent:
    * the open invitation's id again, or `null` once they collaborate.
@@ -49,6 +51,12 @@ export function connectFakeGitHub(baseUrl: string): FakeGitHubControl {
     addRepo: (repo) => call("/_fake/repos", { method: "POST", body: repo }),
     commitFiles: (owner, name, change) => call(`${repoPath(owner, name)}/commits`, { method: "POST", body: change }),
     files: (owner, name) => call(`${repoPath(owner, name)}/files`),
+    fileBytes: async (owner, name, path) => {
+      const response = await fetch(new URL(`${repoPath(owner, name)}/file/${path.split("/").map(encodeURIComponent).join("/")}`, baseUrl));
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error(`Fake GitHub file ${path} answered ${response.status}: ${await response.text()}`);
+      return new Uint8Array(await response.arrayBuffer());
+    },
     invite: (owner, name, invitee) => call(`${repoPath(owner, name)}/invitations`, { method: "POST", body: { invitee } }),
     collaborators: (owner, name) => call(`${repoPath(owner, name)}/collaborators`),
   };

@@ -173,6 +173,16 @@ export function accessTokensFor(state: FakeState, login: string): string[] {
     .map((token) => token.token);
 }
 
+/** Revokes every access and refresh token issued to `login`, as when they revoke the app on github.com. */
+export function revokeAccessTokens(state: FakeState, login: string): void {
+  for (const [key, token] of state.accessTokens) {
+    if (token.login.toLowerCase() === login.toLowerCase()) state.accessTokens.delete(key);
+  }
+  for (const [key, token] of state.refreshTokens) {
+    if (token.login.toLowerCase() === login.toLowerCase()) state.refreshTokens.delete(key);
+  }
+}
+
 /** Issues an access token for `login` directly, as if they had authorized an app. */
 export function issueAccessToken(state: FakeState, login: string, scopes: string[] = ["repo", "read:user"]): string {
   const user = findUser(state, login);
@@ -313,6 +323,14 @@ export function readFiles(repo: FakeRepo, branch = repo.defaultBranch): Record<s
     files[path] = getObject(repo.objects, sha, "blob")?.content.toString("utf8") ?? "";
   }
   return files;
+}
+
+/** One file on a branch, as bytes, or `undefined` when the branch has none. */
+export function readFileBytes(repo: FakeRepo, path: string, branch = repo.defaultBranch): Buffer | undefined {
+  const head = branchHead(repo, branch);
+  const tree = head ? getObject(repo.objects, head, "commit")?.tree : undefined;
+  const sha = tree ? flattenTree(repo.objects, tree).get(path)?.sha : undefined;
+  return sha ? getObject(repo.objects, sha, "blob")?.content : undefined;
 }
 
 export interface FakeCommitSummary {

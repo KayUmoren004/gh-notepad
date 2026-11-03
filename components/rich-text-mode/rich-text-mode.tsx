@@ -7,13 +7,15 @@ import { type Ref, useEffect, useImperativeHandle, useRef, useState } from "reac
 import { getMarkdown, mergeMarkdown, richTextExtensions } from "@/lib/rich-text";
 import { cn } from "@/lib/utils";
 import { FormatBar, TableBar } from "./format-bar";
+import { ImageFiles, ImageHandlerSource, type ImageHandlers, withImageViews } from "./images";
 import { useInputModality } from "./input-modality";
 import { MobileFormatBar } from "./mobile-format-bar";
 import { type PickImage, SlashCommand, SlashMenu, SlashMenuStore } from "./slash-menu";
 
+export type { ImageHandlers } from "./images";
 export type { PickedImage, PickImage } from "./slash-menu";
 
-export interface RichTextModeProps {
+export interface RichTextModeProps extends ImageHandlers {
   /**
    * The note body in Markdown. A value other than the last one this editor
    * produced is a change made elsewhere, and is merged into what is on screen.
@@ -66,25 +68,29 @@ export function RichTextMode({
   placeholder = "Write, or type / for blocks",
   autoFocus = false,
   onPickImage,
+  onImageFile,
+  imageSrc,
   className,
   ref,
 }: RichTextModeProps) {
   // The Markdown this editor and its owner last agreed on: the last value in or out.
   const agreed = useRef(value);
-  const handlers = useRef({ onChange, onPickImage });
+  const handlers = useRef({ onChange, onPickImage, onImageFile, imageSrc });
   const [slashMenu] = useState(() => new SlashMenuStore(handlers));
+  const [imageHandlers] = useState(() => new ImageHandlerSource(handlers));
   const [linking, setLinking] = useState(false);
   const modality = useInputModality();
 
   useEffect(() => {
-    handlers.current = { onChange, onPickImage };
+    handlers.current = { onChange, onPickImage, onImageFile, imageSrc };
   });
 
   // The editor is created once, from the first value; later values are merged in.
   const [extensions] = useState(() => [
-    ...richTextExtensions({ markdown: value }),
+    ...withImageViews(richTextExtensions({ markdown: value }), imageHandlers),
     Placeholder.configure({ placeholder }),
     SlashCommand.configure({ store: slashMenu }),
+    ImageFiles.configure({ handlers: imageHandlers }),
     LinkShortcut.configure({ open: () => setLinking(true) }),
   ]);
 

@@ -1,3 +1,4 @@
+import { attachmentLink, attachmentPath, imageProblem } from "@/lib/attachments";
 import {
   folderOfPath,
   notePath,
@@ -9,7 +10,14 @@ import {
   writeNote,
   type NoteFields,
 } from "@/lib/notebook-format";
-import { NotepadDatabase, type AgreedVersion, type DatabaseOptions, type NoteRow, type NotebookRow } from "./database";
+import {
+  NotepadDatabase,
+  type AgreedVersion,
+  type AttachmentRow,
+  type DatabaseOptions,
+  type NoteRow,
+  type NotebookRow,
+} from "./database";
 
 export type { AgreedVersion } from "./database";
 
@@ -80,6 +88,21 @@ export type PullChange =
   /** The note left the notebook and has nothing unsynced: it goes from the device too. */
   | { id: string; remove: true };
 
+/** An image to attach: its content type and bytes (a `File` will do). */
+export interface NewAttachment {
+  type: string;
+  bytes: Blob;
+}
+
+/** An attachment waiting for the push that commits it. */
+export interface PendingAttachment {
+  path: string;
+  type: string;
+  bytes: Blob;
+  /** The blob SHA GitHub gave its bytes, once stored there; `null` until then. */
+  sha: string | null;
+}
+
 /** The sync engine's side of the store. The UI never calls these. */
 export interface SyncLedger {
   notebook: (id: string) => Notebook | undefined;
@@ -97,6 +120,13 @@ export interface SyncLedger {
    * Text typed while the push was in flight stays, and keeps the note unsynced.
    */
   applyPush: (notebook: string, head: string, pushed: readonly { id: string; base: AgreedVersion }[]) => void;
+
+  /** Attachments inserted on this device that no commit holds yet. */
+  pendingAttachments: (notebook: string) => PendingAttachment[];
+  /** Records that an attachment's bytes are stored on GitHub as blob `sha`, so a retried push needn't send them again. */
+  recordAttachmentBlob: (notebook: string, path: string, sha: string) => void;
+  /** Records that a commit added these attachments to the notebook. The device keeps its copies for showing them offline. */
+  applyAttachmentPush: (notebook: string, paths: readonly string[]) => void;
 }
 
 export interface DeviceStore {
@@ -115,6 +145,16 @@ export interface DeviceStore {
   editBody: (id: string, body: string) => void;
   /** Renames a note: the title is sanitised and de-duplicated, and becomes its file name. */
   rename: (id: string, title: string) => void;
+
+  /**
+   * Stores an image on this device, to be committed under `attachments/` with
+   * the next push, and returns the root-relative link a note embeds it with.
+   * Throws, storing nothing, for a file that isn't an attachable image (the
+   * message is for the member: see `imageProblem`).
+   */
+  addAttachment: (notebook: string, image: NewAttachment) => string;
+  /** A URL showing the device's copy of the attachment at `path`, or `null` if this device holds none. */
+  attachmentSrc: (notebook: string, path: string) => string | null;
 
   readonly sync: SyncLedger;
 
@@ -153,11 +193,18 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
 
   const db = new NotepadDatabase(account.id, options);
   await db.open();
-  const [noteRows, notebookRows] = await Promise.all([db.notes.toArray(), db.notebooks.toArray()]);
+  const [noteRows, notebookRows, attachmentRows] = await Promise.all([
+    db.notes.toArray(),
+    db.notebooks.toArray(),
+    db.attachments.toArray(),
+  ]);
 
   const entries = new Map<string, Entry>();
   for (const row of noteRows) entries.set(row.key, { row, persisted: row.revision, parsed: parse(row.text) });
   const notebooks = new Map<string, NotebookRow>(notebookRows.map((row) => [row.id, row]));
+  const attachments = new Map<string, AttachmentRow>(attachmentRows.map((row) => [attachmentKey(row), row]));
+  /** Object URLs made for showing device copies, revoked when the store closes. */
+  const objectUrls = new Map<string, string>();
 
   const listeners = new Set<() => void>();
   let state: DeviceState = { notes: new Map([...entries].map(([key, entry]) => [key, view(entry)])), edits: 0 };
@@ -165,6 +212,7 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
   const pendingNotes = new Set<string>();
   const removedNotes = new Set<string>();
   const pendingNotebooks = new Set<string>();
+  const pendingAttachmentRows = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let writing: Promise<void> = Promise.resolve();
 
@@ -206,23 +254,30 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
       const row = notebooks.get(id);
       return row ? [{ ...row }] : [];
     });
+    const images = [...pendingAttachmentRows].flatMap((key) => {
+      const row = attachments.get(key);
+      return row ? [{ ...row }] : [];
+    });
     pendingNotes.clear();
     removedNotes.clear();
     pendingNotebooks.clear();
-    if (notes.length === 0 && removed.length === 0 && books.length === 0) return writing;
+    pendingAttachmentRows.clear();
+    if (notes.length === 0 && removed.length === 0 && books.length === 0 && images.length === 0) return writing;
 
     writing = writing.then(async () => {
       try {
-        await db.transaction("rw", db.notes, db.notebooks, async () => {
+        await db.transaction("rw", db.notes, db.notebooks, db.attachments, async () => {
           if (notes.length > 0) await db.notes.bulkPut(notes);
           if (removed.length > 0) await db.notes.bulkDelete(removed);
           if (books.length > 0) await db.notebooks.bulkPut(books);
+          if (images.length > 0) await db.attachments.bulkPut(images);
         });
       } catch (error) {
         // Keep everything pending and try again; nothing in memory is lost.
         for (const row of notes) pendingNotes.add(row.key);
         for (const key of removed) removedNotes.add(key);
         for (const row of books) pendingNotebooks.add(row.id);
+        for (const row of images) pendingAttachmentRows.add(attachmentKey(row));
         schedule();
         console.error("Saving to this device failed; retrying", error);
         return;
@@ -336,6 +391,29 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
       setHead(notebook, head);
       changed(keys);
     },
+
+    pendingAttachments: (notebook) =>
+      [...attachments.values()]
+        .filter((row) => row.notebook === notebook && !row.synced)
+        .map(({ path, type, bytes, sha }) => ({ path, type, bytes, sha })),
+
+    recordAttachmentBlob: (notebook, path, sha) => {
+      const row = attachments.get(attachmentKey({ notebook, path }));
+      if (!row || row.sha === sha) return;
+      row.sha = sha;
+      pendingAttachmentRows.add(attachmentKey(row));
+      schedule();
+    },
+
+    applyAttachmentPush: (notebook, paths) => {
+      for (const path of paths) {
+        const row = attachments.get(attachmentKey({ notebook, path }));
+        if (!row || row.synced) continue;
+        row.synced = true;
+        pendingAttachmentRows.add(attachmentKey(row));
+      }
+      schedule();
+    },
   };
 
   function setHead(notebook: string, head: string) {
@@ -390,6 +468,37 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
         return true;
       }),
 
+    addAttachment: (notebook, image) => {
+      const problem = imageProblem({ type: image.type, size: image.bytes.size });
+      if (problem) throw new Error(problem);
+      const row: AttachmentRow = {
+        notebook,
+        path: attachmentPath(image.type, newId()),
+        type: image.type,
+        bytes: image.bytes,
+        sha: null,
+        synced: false,
+      };
+      attachments.set(attachmentKey(row), row);
+      pendingAttachmentRows.add(attachmentKey(row));
+      // Counts as an edit: the note that embeds it changes next, and the pair goes out together.
+      publish([], 1);
+      schedule();
+      return attachmentLink(row.path);
+    },
+
+    attachmentSrc: (notebook, path) => {
+      const key = attachmentKey({ notebook, path });
+      const row = attachments.get(key);
+      if (!row) return null;
+      let url = objectUrls.get(key);
+      if (!url) {
+        url = URL.createObjectURL(row.bytes);
+        objectUrls.set(key, url);
+      }
+      return url;
+    },
+
     sync,
     flush,
     close: async () => {
@@ -398,9 +507,15 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
         document.removeEventListener("visibilitychange", flushOnHide);
         window.removeEventListener("pagehide", flushNow);
       }
+      for (const url of objectUrls.values()) URL.revokeObjectURL(url);
+      objectUrls.clear();
       db.close();
     },
   };
+}
+
+function attachmentKey({ notebook, path }: { notebook: string; path: string }): string {
+  return `${notebook}\u0000${path}`;
 }
 
 function parse(text: string): Entry["parsed"] {

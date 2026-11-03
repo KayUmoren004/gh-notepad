@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { AccountMenu, type AccountMember } from "@/components/account/account-menu";
 import { MigrationNotice } from "@/components/notes/migration-notice";
 import { useNote, useNotebookTrees, useRecentNotes } from "@/components/notes/notepad-provider";
+import { SyncNotices } from "@/components/notes/sync-notices";
 import { Button } from "@/components/ui/button";
 import { flattenTrees, keysAbove } from "@/lib/notebook-tree";
 import { cn } from "@/lib/utils";
@@ -106,6 +107,7 @@ export function Sidebar({ member, openId, onOpen, onCreate, className }: Sidebar
       </div>
 
       <MigrationNotice className="mx-2 mt-2" />
+      <SyncNotices className="mx-2 mt-2" onOpen={(id) => onOpen(id, { instant: false })} />
 
       <nav
         ref={scroller}

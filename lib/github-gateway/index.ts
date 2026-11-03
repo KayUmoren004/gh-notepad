@@ -17,6 +17,7 @@ export {
   type CommitOutcome,
   type FileChange,
   type MemberGitHub,
+  type NotebookBlob,
   type NotebookFile,
   type NotebookLocation,
   type RepositoryName,
