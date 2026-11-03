@@ -24,5 +24,9 @@ export type {
   HeadResponse,
   NotebookRef,
   RemoteFile,
+  RevokeShareRequest,
+  RevokeShareResponse,
+  ShareRequest,
+  ShareResponse,
 } from "./contract";
 export { BLOBS_PER_REQUEST } from "./contract";

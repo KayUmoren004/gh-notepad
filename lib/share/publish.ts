@@ -4,6 +4,7 @@ import { readNote, titleOfPath } from "@/lib/notebook-format";
 import type { ShareFile, ShareStore } from "@/lib/share-store";
 import { renderShareHtml } from "./render";
 import { isShareId } from "./share-id";
+import { sharePath } from "./urls";
 
 /** The file of a published copy that holds the rendered note. */
 export const SHARE_NOTE_FILE = "note.json";
@@ -72,7 +73,8 @@ export async function publishShare({
 
   const inNotebook = new Map(files.map((file) => [file.path, file.sha]));
   const { html, attachments } = renderShareHtml(fields.body, {
-    attachmentSrc: (attachment) => (inNotebook.has(attachment) ? attachment : null),
+    // Served by the share page's own attachments route, never through the notebook routes.
+    attachmentSrc: (attachment) => (inNotebook.has(attachment) ? `${sharePath(id)}/${attachment}` : null),
   });
   const published: PublishedNote = {
     title: titleOfPath(path),
