@@ -1,20 +1,32 @@
 import { fakeOnlyRoutes } from "./endpoints/fake-only";
+import { gitDataRoutes } from "./endpoints/git-data";
 import { oauthRoutes } from "./endpoints/oauth";
+import { repoRoutes } from "./endpoints/repos";
 import { userRoutes } from "./endpoints/users";
 import { apiError, matchPath, type FakeRoute } from "./router";
 import {
   accessTokensFor,
   addOAuthApp,
+  addRepo,
   addUser,
+  commitFiles,
+  commitLog,
   createState,
+  findRepo,
+  issueAccessToken,
+  readFiles,
+  type FakeCommitSummary,
   type FakeOAuthApp,
+  type FakeRepo,
+  type FakeRequest,
   type FakeState,
   type FakeUser,
+  type RepoSeed,
   type UserSeed,
 } from "./state";
 
 /** Every endpoint the fake answers. Add new endpoint modules here. */
-const routes: FakeRoute[] = [...oauthRoutes, ...userRoutes, ...fakeOnlyRoutes];
+const routes: FakeRoute[] = [...oauthRoutes, ...userRoutes, ...repoRoutes, ...gitDataRoutes, ...fakeOnlyRoutes];
 
 export interface FakeGitHubOptions {
   /** Clock for token and code expiry, in epoch milliseconds. */
@@ -44,6 +56,28 @@ export interface FakeGitHub {
   authorize: (authorizeUrl: string | URL, as: { login: string } | "deny") => Promise<URL>;
   /** Every access token issued to `login`, oldest first. */
   accessTokensFor: (login: string) => string[];
+  /** Issues a token for `login` without the OAuth dance, for tests that start signed in. */
+  issueAccessToken: (login: string, scopes?: string[]) => string;
+
+  /**
+   * Seeds a repository (and its owner). With `files` it has an initial commit
+   * holding them; without, it is empty. Adding one that exists returns it.
+   */
+  addRepo: (repo: RepoSeed) => FakeRepo;
+  /** The repository `owner/name`, or `undefined`. */
+  repo: (owner: string, name: string) => FakeRepo | undefined;
+  /**
+   * Plays an edit made outside the app (on github.com, or pushed from another
+   * editor): commits `files` to the default branch, where `null` deletes a
+   * path. Returns the new commit's SHA.
+   */
+  commitFiles: (owner: string, name: string, change: { message: string; files: Record<string, string | null> }) => string;
+  /** Every file on the default branch, as text, by path. */
+  files: (owner: string, name: string) => Record<string, string>;
+  /** The default branch's history, newest first, with the paths each commit changed. */
+  commits: (owner: string, name: string) => FakeCommitSummary[];
+  /** Every GitHub request answered so far (control routes under `/_fake/` aside), oldest first. */
+  requests: () => FakeRequest[];
 }
 
 export function createFakeGitHub(options: FakeGitHubOptions = {}): FakeGitHub {
@@ -56,6 +90,13 @@ export function createFakeGitHub(options: FakeGitHubOptions = {}): FakeGitHub {
     addUser: (user) => addUser(state, user),
     addOAuthApp: (app) => addOAuthApp(state, app),
     accessTokensFor: (login) => accessTokensFor(state, login),
+    issueAccessToken: (login, scopes) => issueAccessToken(state, login, scopes),
+    addRepo: (repo) => addRepo(state, repo),
+    repo: (owner, name) => findRepo(state, owner, name),
+    commitFiles: (owner, name, change) => commitFiles(state, requireRepo(state, owner, name), change),
+    files: (owner, name) => readFiles(requireRepo(state, owner, name)),
+    commits: (owner, name) => commitLog(requireRepo(state, owner, name)),
+    requests: () => [...state.requests],
 
     authorize: async (authorizeUrl, as) => {
       const url = new URL(authorizeUrl);
@@ -78,8 +119,22 @@ export function createFakeGitHub(options: FakeGitHubOptions = {}): FakeGitHub {
   };
 }
 
+function requireRepo(state: FakeState, owner: string, name: string): FakeRepo {
+  const repo = findRepo(state, owner, name);
+  if (!repo) throw new Error(`Fake GitHub has no repository ${owner}/${name}`);
+  return repo;
+}
+
 async function route(state: FakeState, request: Request): Promise<Response> {
   const url = new URL(request.url);
+  const response = await dispatch(state, request, url);
+  if (!url.pathname.startsWith("/_fake/")) {
+    state.requests.push({ method: request.method, path: url.pathname + url.search, status: response.status });
+  }
+  return response;
+}
+
+async function dispatch(state: FakeState, request: Request, url: URL): Promise<Response> {
   for (const candidate of routes) {
     if (candidate.method !== request.method) continue;
     const params = matchPath(candidate.path, url.pathname);
