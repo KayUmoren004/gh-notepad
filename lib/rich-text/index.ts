@@ -32,6 +32,16 @@ export function markdownSourceBlocks(editor: Editor): string[] {
   return sources;
 }
 
+/** Whether rich text mode would show part of `markdown` as source, because it can't express it faithfully. */
+export function hasMarkdownSource(markdown: string): boolean {
+  const { doc } = MarkdownDocument.load(new MarkdownCodec(documentExtensions()), markdown);
+  let found = false;
+  doc.forEach((node) => {
+    if (node.type.name === MARKDOWN_SOURCE) found = true;
+  });
+  return found;
+}
+
 /** The Markdown rich text mode would write for `markdown` if every block were rewritten. */
 export function normalizeMarkdown(markdown: string): string {
   return MarkdownDocument.load(new MarkdownCodec(documentExtensions()), markdown).canonical();
