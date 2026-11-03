@@ -254,7 +254,7 @@ export function createNotebookApi({ appUrl, readSession, github }: NotebookApiOp
     }
 
     if (action === "versions" && request.method === "GET") {
-      const notebook = branchOf(session, owner, repo, url.searchParams.get("branch"));
+      const notebook = await branchOf(member, owner, repo, url.searchParams.get("branch"));
       const path = url.searchParams.get("path") ?? "";
       if (!isSafePath(path)) throw invalid("Unsafe path");
       const versions: VersionsResponse = { versions: await gitHub.listVersions(notebook, path) };
@@ -262,7 +262,7 @@ export function createNotebookApi({ appUrl, readSession, github }: NotebookApiOp
     }
 
     if (action === "file" && request.method === "GET") {
-      const notebook = notebookOf(session, owner, repo);
+      const notebook = await notebookOf(member, owner, repo);
       const commit = url.searchParams.get("commit") ?? "";
       const path = url.searchParams.get("path") ?? "";
       if (!SHA.test(commit)) throw invalid("Invalid commit");
