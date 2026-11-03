@@ -9,10 +9,13 @@
  * - `initialMode` and the mode memory remember the mode chosen for each note
  *   on this device, and open notes rich text mode can't show faithfully in
  *   source mode.
- * - `sourceTheme` styles the editor with the app's design tokens.
+ *
+ * Nothing here loads CodeMirror itself: the note editor imports this module
+ * whichever mode a note is in. The theme (`./theme`) and the merge of a
+ * change from elsewhere (`./merge`) belong to the editor component, which is
+ * loaded on demand, and are imported from their files.
  */
 export { cursorAnchor, findAnchor, type CursorAnchor, type CursorLocation } from "./cursor-anchor";
 export { joinLineEnding, splitLineEnding, type LineEnding } from "./line-endings";
 export { minimalChanges, type TextChange } from "./minimal-changes";
 export { deviceStorage, initialMode, rememberedMode, rememberMode, type EditingMode, type ModeStorage } from "./mode-memory";
-export { sourceTheme } from "./theme";
