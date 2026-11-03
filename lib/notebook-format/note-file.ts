@@ -8,6 +8,8 @@ export interface NoteFields {
   /** ISO 8601 timestamps, as written in the frontmatter. */
   created: string | null;
   updated: string | null;
+  /** The note's share link id while it is shared (ticket #14), or `null`. */
+  share: string | null;
   /** Everything after the frontmatter, exactly as it is in the file. */
   body: string;
 }
@@ -15,13 +17,14 @@ export interface NoteFields {
 /**
  * Changes to apply to a note file. A field left out, or given as `null`, keeps
  * whatever the file has; a field equal to what the file has changes nothing.
+ * An empty `share` removes the key: a note is either shared or it isn't.
  */
 export type NoteChanges = { [Field in keyof NoteFields]?: NoteFields[Field] | null };
 
 type MetaField = Exclude<keyof NoteFields, "body">;
 
 /** The order the app writes its own keys in when a file has none. */
-const META_FIELDS: readonly MetaField[] = ["id", "tags", "created", "updated"];
+const META_FIELDS: readonly MetaField[] = ["id", "tags", "created", "updated", "share"];
 
 interface Parts {
   /** A byte order mark, kept as found. */
@@ -88,11 +91,14 @@ function scalarText(node: unknown): string | null {
   return null;
 }
 
+const NO_META = (): Omit<NoteFields, "body"> => ({ id: null, tags: [], created: null, updated: null, share: null });
+
 function readMeta({ doc, editable }: Frontmatter): Omit<NoteFields, "body"> {
-  const meta: Omit<NoteFields, "body"> = { id: null, tags: [], created: null, updated: null };
+  const meta: Omit<NoteFields, "body"> = NO_META();
   if (!editable || !isMap(doc.contents)) return meta;
 
   meta.id = scalarText(doc.get("id", true));
+  meta.share = scalarText(doc.get("share", true));
   meta.created = scalarText(doc.get("created", true));
   meta.updated = scalarText(doc.get("updated", true));
   const tags = doc.get("tags", true);
@@ -108,7 +114,7 @@ function readMeta({ doc, editable }: Frontmatter): Omit<NoteFields, "body"> {
 /** Reads a note file. Never throws: a file that isn't what the app writes still has a body. */
 export function readNote(text: string): NoteFields {
   const parts = split(text);
-  const meta = parts.open ? readMeta(parse(parts.source)) : { id: null, tags: [], created: null, updated: null };
+  const meta = parts.open ? readMeta(parse(parts.source)) : NO_META();
   return { ...meta, body: parts.body };
 }
 
@@ -136,7 +142,8 @@ function renderTags(tags: readonly string[]): string {
 /**
  * Applies metadata changes to frontmatter YAML. Values are spliced into the
  * source where they already are, so comments, spacing and every other key stay
- * byte-identical; only what changed is rewritten.
+ * byte-identical; only what changed is rewritten. An empty string removes the
+ * key, with the line it was on.
  */
 function applyMeta(source: string, eol: string, changes: Partial<Record<MetaField, string | string[]>>): string {
   const { doc } = parse(source);
@@ -150,7 +157,13 @@ function applyMeta(source: string, eol: string, changes: Partial<Record<MetaFiel
     const node = isMap(doc.contents) ? doc.get(field, true) : undefined;
     const text = Array.isArray(value) ? renderTags(value) : renderScalar(value, node as Node | undefined);
 
-    if (node === undefined) {
+    if (value === "") {
+      const pair = isMap(doc.contents) ? doc.contents.items.find((item) => scalarText(item.key) === field) : undefined;
+      const start = isScalar(pair?.key) ? pair.key.range?.[0] : undefined;
+      if (start === undefined) continue;
+      const lineEnd = source.indexOf("\n", start);
+      splices.push({ start, end: lineEnd === -1 ? source.length : lineEnd + 1, text: "" });
+    } else if (node === undefined) {
       appended.push(`${field}: ${text}${eol}`);
     } else if (isScalar(node) && node.range && !Array.isArray(value)) {
       splices.push({ start: node.range[0], end: node.range[1], text });
@@ -165,7 +178,8 @@ function applyMeta(source: string, eol: string, changes: Partial<Record<MetaFiel
     for (const field of META_FIELDS) {
       const value = changes[field];
       if (value === undefined) continue;
-      doc.set(field, Array.isArray(value) ? doc.createNode(value, { flow: true }) : value);
+      if (value === "") doc.delete(field);
+      else doc.set(field, Array.isArray(value) ? doc.createNode(value, { flow: true }) : value);
     }
     const rendered = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
     return eol === "\n" ? rendered : rendered.replace(/\r?\n/g, eol);
@@ -187,13 +201,17 @@ function applyMeta(source: string, eol: string, changes: Partial<Record<MetaFiel
 export function writeNote(text: string, changes: NoteChanges): string {
   const parts = split(text);
   const frontmatter = parts.open ? parse(parts.source) : null;
-  const current = frontmatter ? readMeta(frontmatter) : { id: null, tags: [], created: null, updated: null };
+  const current = frontmatter ? readMeta(frontmatter) : NO_META();
 
   const metaChanges: Partial<Record<MetaField, string | string[]>> = {};
   for (const field of META_FIELDS) {
     const value = changes[field];
     if (value === undefined || value === null) continue;
-    // An empty tag list and no `tags` key mean the same thing.
+    // An empty tag list and no `tags` key mean the same thing; so do an empty share id and no `share` key.
+    if (value === "" && field === "share") {
+      if (hasKey(frontmatter, field)) metaChanges[field] = value;
+      continue;
+    }
     if ((hasKey(frontmatter, field) || field === "tags") && sameValue(field, current, value)) continue;
     metaChanges[field] = value;
   }

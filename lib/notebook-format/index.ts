@@ -3,7 +3,8 @@
  * notebook's repository. Pure functions, used on the device and on the server.
  *
  * - A note is `<folder path>/<title>.md`: Markdown with optional YAML
- *   frontmatter holding `id`, `tags`, `created` and `updated`.
+ *   frontmatter holding `id`, `tags`, `created`, `updated` and, while the
+ *   note has a share link, `share`.
  * - Reading and writing never disturb what they don't change: an unchanged
  *   note serialises to the original bytes.
  */
