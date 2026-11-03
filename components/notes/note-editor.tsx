@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { HistoryButton, HistoryPanel, useHistoryPanel } from "@/components/history";
 import { usePaletteAction } from "@/components/palette";
 import { RichTextMode, type RichTextModeHandle } from "@/components/rich-text-mode";
 import { TopBar } from "@/components/shell";
@@ -58,12 +59,24 @@ export function NoteEditor({
   const [mode, setMode] = useState<EditingMode>(() => initialMode(deviceStorage(), login, noteId, note?.body ?? ""));
   // After a switch: the cursor to put in the other mode as soon as it exists.
   const carried = useRef<{ anchor: CursorAnchor; focus: boolean } | null>(null);
+  const history = useHistoryPanel();
 
   useEffect(() => {
     if (!focusTitle) return;
     title.current?.focus();
     title.current?.select();
   }, [focusTitle, noteId]);
+
+  // A pull can re-title the note while its title is focused but not yet typed into (a fresh "Untitled"
+  // becomes "Untitled 2" when another device created one at the same moment). The new value drops the
+  // selection, so keystrokes would be appended to it: select the whole title again, so the next keystroke
+  // still replaces it. A draft is left alone: the member sees what they typed, and renames go on from it.
+  const storedTitle = note?.title;
+  useLayoutEffect(() => {
+    const input = title.current;
+    if (titleDraft !== null || !input || document.activeElement !== input) return;
+    input.select();
+  }, [storedTitle, titleDraft]);
 
   function switchMode(next: EditingMode) {
     if (next === mode) return;
@@ -120,10 +133,12 @@ export function NoteEditor({
         {/* The note's actions: the mode toggle now, history, share and more as their tickets land. */}
         <div data-slot="note-actions" className="flex items-center gap-0.5">
           <ModeToggle mode={mode} onChange={switchMode} />
+          <HistoryButton open={history.open} onToggle={() => history.toggle()} />
           <MoreMenu note={note} onRename={() => (title.current?.focus(), title.current?.select())} />
         </div>
       </TopBar>
 
+      <div className="flex min-h-0 flex-1">
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-safe">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-6 pt-3 pb-24 md:pt-14">
           <input
@@ -167,6 +182,8 @@ export function NoteEditor({
             />
           )}
         </div>
+      </div>
+      <HistoryPanel note={note} open={history.open} instant={history.instant} onClose={() => history.close()} imageSrc={images.editorProps.imageSrc} />
       </div>
     </article>
   );

@@ -67,6 +67,15 @@ export const signOutMembers: Record<string, { first: string; second: string }> =
   phone: { first: "octo-signout-one-phone", second: "octo-signout-two-phone" },
 };
 
+/**
+ * Allowed members whose personal notebooks the title spec uses, one per
+ * Playwright project, so a re-title of a fresh note there is its own doing.
+ */
+export const titleMembers: Record<string, string> = {
+  desktop: "octo-title-desktop",
+  phone: "octo-title-phone",
+};
+
 const oauthApp = {
   GITHUB_CLIENT_ID: "e2e-client-id",
   GITHUB_CLIENT_SECRET: "e2e-client-secret",
@@ -93,6 +102,7 @@ export const appEnv = {
     ...Object.values(searchMembers).flatMap(({ notes, big }) => [notes, big]),
     ...Object.values(folderMembers),
     ...Object.values(signOutMembers).flatMap(({ first, second }) => [first, second]),
+    ...Object.values(titleMembers),
   ].join(","),
   GITHUB_API_BASE_URL: fakeGitHubUrl,
   GITHUB_OAUTH_BASE_URL: fakeGitHubUrl,

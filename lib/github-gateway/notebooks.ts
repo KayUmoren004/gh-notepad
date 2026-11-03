@@ -34,6 +34,21 @@ export interface NotebookBlob {
   bytes: Buffer;
 }
 
+/** One commit that touched a file, wherever the file was at the time. */
+export interface FileVersion {
+  commit: string;
+  /** The file's path at that commit. */
+  path: string;
+  message: string;
+  /** ISO 8601, the commit's author date. */
+  date: string;
+  /** The author's login, or their name when GitHub can't match the commit to an account. */
+  author: string;
+}
+
+/** Commits walked per history at most: enough for years of a note's sessions, bounded for the rate limit. */
+export const MAX_VERSIONS = 500;
+
 export type CommitOutcome =
   /** `blobs` holds the blob SHA of every file written, by path. */
   | { status: "committed"; commit: string; blobs: Record<string, string> }
@@ -69,6 +84,15 @@ export interface MemberGitHub {
    * none. With the blob `sha` the branch isn't consulted: a blob never changes.
    */
   readBlob: (notebook: NotebookLocation, path: string, sha: string | null) => Promise<NotebookBlob | null>;
+  /**
+   * Every commit on the branch that touched the file at `path`, newest first,
+   * following the file back through renames and moves (GitHub's listing by
+   * path stops at a rename; each rename's `previous_filename` continues it).
+   * Bounded by `MAX_VERSIONS`.
+   */
+  listVersions: (notebook: NotebookLocation, path: string) => Promise<FileVersion[]>;
+  /** The file's text at `commit`, or `null` if that commit has no file at `path`. */
+  readFileAt: (notebook: RepositoryName, commit: string, path: string) => Promise<string | null>;
 }
 
 /** Git's blob SHA for UTF-8 text, so callers can recognise their own content in later listings. */
@@ -87,6 +111,32 @@ function repoPath({ owner, repo }: { owner: string; repo: string }): string {
 
 function branchPath(branch: string): string {
   return branch.split("/").map(segment).join("/");
+}
+
+function filePath(path: string): string {
+  return path.split("/").map(segment).join("/");
+}
+
+/** The `page` of the `rel="next"` link, or `null` on the last page. */
+function nextPage(response: Response): string | null {
+  const link = response.headers.get("link") ?? "";
+  const match = /<([^>]+)>;\s*rel="next"/.exec(link);
+  return match ? new URL(match[1]).searchParams.get("page") : null;
+}
+
+function versionOf(entry: Record<string, unknown>, path: string): FileVersion | null {
+  const commit = text(entry.sha);
+  const details = record(entry.commit);
+  const author = record(details.author);
+  const date = text(author.date);
+  if (!commit || !date) return null;
+  return {
+    commit,
+    path,
+    message: typeof details.message === "string" ? details.message : "",
+    date,
+    author: text(record(entry.author).login) ?? text(author.name) ?? "",
+  };
 }
 
 function locationOf(body: Record<string, unknown>): NotebookLocation {
@@ -254,6 +304,52 @@ export function memberGitHub(api: ApiCall, login: string): MemberGitHub {
       const bytes =
         body.encoding === "base64" ? Buffer.from(content.replace(/\s/g, ""), "base64") : Buffer.from(content, "utf8");
       return { sha: blobSha, bytes };
+    },
+
+    listVersions: async (notebook, path) => {
+      const repo = repoPath(notebook);
+      const versions: FileVersion[] = [];
+      const seen = new Set<string>();
+      // Where the walk stands: the path to list, from the commit to start at (the branch head first).
+      let current: { path: string; from: string } | null = { path, from: notebook.branch };
+      while (current && versions.length < MAX_VERSIONS) {
+        let oldest: string | null = null;
+        let page: string | null = "1";
+        while (page && versions.length < MAX_VERSIONS) {
+          const query = new URLSearchParams({ sha: current.from, path: current.path, per_page: "100", page });
+          const response = await api(`${repo}/commits?${query}`);
+          const entries: unknown = await response.json();
+          for (const entry of Array.isArray(entries) ? entries.map(record) : []) {
+            const version = versionOf(entry, current.path);
+            if (!version || seen.has(version.commit)) continue;
+            seen.add(version.commit);
+            versions.push(version);
+            oldest = version.commit;
+            if (versions.length >= MAX_VERSIONS) break;
+          }
+          page = nextPage(response);
+        }
+        if (!oldest) break;
+        // The file's first commit under this path: a rename there says where it was before.
+        const detail = await getJson(`${repo}/commits/${segment(oldest)}`);
+        const files = Array.isArray(detail.files) ? detail.files.map(record) : [];
+        const renamed = files.find((file) => file.filename === current?.path && file.status === "renamed");
+        const previous = renamed && text(renamed.previous_filename);
+        current = previous ? { path: previous, from: oldest } : null;
+      }
+      return versions;
+    },
+
+    readFileAt: async (notebook, commit, path) => {
+      try {
+        const response = await api(`${repoPath(notebook)}/contents/${filePath(path)}?${new URLSearchParams({ ref: commit })}`, {
+          accept: "application/vnd.github.raw+json",
+        });
+        return await response.text();
+      } catch (error) {
+        if (error instanceof GitHubError && error.status === 404) return null;
+        throw error;
+      }
     },
   };
 }

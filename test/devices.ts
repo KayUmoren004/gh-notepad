@@ -4,6 +4,7 @@ import { authFromEnv } from "@/lib/auth";
 import { openDeviceStore, type DeviceStore } from "@/lib/device-store";
 import { notebookApiFromEnv } from "@/lib/notebook-api";
 import { createRemote } from "@/lib/remote";
+import { sharedNotebooksApiFromEnv } from "@/lib/shared-notebooks-api";
 import { createSyncEngine, type SyncEngine, type SyncEngineOptions } from "@/lib/sync-engine";
 import { CookieJar } from "./cookie-jar";
 import { createFakeGitHub, type FakeGitHub } from "./fake-github";
@@ -46,7 +47,8 @@ export interface Hold {
   release: () => void;
 }
 
-export interface SignInOptions extends Pick<SyncEngineOptions, "timers" | "maxChangesPerCommit"> {
+export interface SignInOptions
+  extends Pick<SyncEngineOptions, "timers" | "maxChangesPerCommit" | "pollMs" | "listNotebooksMs"> {
   sameBrowserAs?: Device;
 }
 
@@ -63,7 +65,13 @@ export interface World {
   ) => Promise<Response>;
 }
 
-export function createWorld({ members = ["octo-member"] }: { members?: string[] } = {}): World {
+export interface WorldOptions {
+  members?: string[];
+  /** Environment variables for the app's routes, over the world's own (a deployment's attachment limit, say). */
+  env?: Record<string, string>;
+}
+
+export function createWorld({ members = ["octo-member"], env: overrides = {} }: WorldOptions = {}): World {
   const github = createFakeGitHub();
   const app = github.addOAuthApp({ callbackUrl: `${appUrl}/api/auth/callback` });
   for (const login of members) github.addUser({ login });
@@ -87,14 +95,27 @@ export function createWorld({ members = ["octo-member"] }: { members?: string[] 
     GITHUB_CLIENT_SECRET: app.clientSecret,
     OWNER_GITHUB_USER: members[0],
     ALLOWED_GITHUB_USERS: members.join(","),
+    ...overrides,
   };
   const auth = authFromEnv(env, { fetch: toGitHub });
-  const api = notebookApiFromEnv(env, { fetch: toGitHub });
+  const notebookApi = notebookApiFromEnv(env, { fetch: toGitHub });
+  const sharedNotebooksApi = sharedNotebooksApiFromEnv(env, { fetch: toGitHub });
+  /** Routes a request the way `app/api/` does: shared-notebook routes to their API, every other notebook route to the notebook API. */
+  const api = {
+    handle: (request: NextRequest) => {
+      const segments = request.nextUrl.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean);
+      const shared =
+        segments[0] === "invitations" ||
+        (segments[0] === "notebooks" &&
+          (segments.length === 1 || ["collaborators", "invitations", "leave"].includes(segments[3] ?? "")));
+      return (shared ? sharedNotebooksApi : notebookApi).handle(request);
+    },
+  };
 
   async function open(
     jar: CookieJar,
     indexedDB: IDBFactory,
-    options: Pick<SyncEngineOptions, "timers" | "maxChangesPerCommit">,
+    options: Omit<SignInOptions, "sameBrowserAs">,
   ): Promise<Device> {
     const session = await auth.readSession(jar);
     if (!session) throw new Error("The device isn't signed in");

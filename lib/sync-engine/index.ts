@@ -22,11 +22,19 @@
  *   with back-off. Device data is never touched by any of this.
  * - Attachments inserted on the device are stored on GitHub as blobs first,
  *   then named in the same commit as the notes that embed them
- *   (`attachments.ts`).
+ *   (`attachments.ts`). One the deployment refuses for good (over its size
+ *   limit) is marked failed in the store and left out, so the notes still
+ *   sync; the idle status counts them (`failedAttachments`).
  * - Folders kept while empty travel as `.gitkeep` markers (`folders.ts`): a
  *   pull lists them, a push adds or moves them. A folder renamed or moved on
  *   the device is every note under it renamed (ids kept) plus its markers
  *   moved, in one push named after the move.
+ * - Every notebook the member can open is synced, the personal one first:
+ *   the list is asked for on start, every few minutes, and on demand
+ *   (`refreshNotebooks`, after creating a notebook or accepting an
+ *   invitation). A notebook that appears is located and synced from then on;
+ *   one the member left or was removed from is forgotten from the device,
+ *   notes and all. One notebook failing doesn't hold up the rest.
  */
 export {
   createSyncEngine,

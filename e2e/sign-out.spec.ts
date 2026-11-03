@@ -77,7 +77,7 @@ test("signing out keeping the notes: they are on the device, before any sync, wh
   await signInAs(first);
   await expect(page).toHaveURL("/notes");
   // The note renders from the device while GitHub is still unreachable.
-  await page.getByRole("button", { name: title }).click();
+  await page.getByRole("button", { name: title, exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Note text" })).toHaveText("Still here");
 
   await sync.release();
@@ -112,10 +112,10 @@ test("signing out removing the notes: they are gone from the device and come bac
   await signInAs(first);
   await expect(page).toHaveURL("/notes");
   await expect(page.getByRole("button", { name: "New note" })).toBeVisible();
-  await expect(page.getByRole("button", { name: title })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: title, exact: true })).toHaveCount(0);
 
   await sync.release();
-  await page.getByRole("button", { name: title }).click({ timeout: 20_000 });
+  await page.getByRole("button", { name: title, exact: true }).click({ timeout: 20_000 });
   await expect(page.getByRole("textbox", { name: "Note text" })).toHaveText("On GitHub");
   await waitUntilSynced(page);
 });
@@ -149,7 +149,7 @@ test("removing with unsynced changes warns first, naming the notes that would lo
   await warning.getByRole("button", { name: "Cancel" }).click();
   await expect(warning).toBeHidden();
   await expect(page).toHaveURL(/\/notes/);
-  if (isMobile) await expect(page.getByRole("button", { name: titles[1] })).toBeVisible();
+  if (isMobile) await expect(page.getByRole("button", { name: titles[1], exact: true })).toBeVisible();
   else await expect(page.getByRole("textbox", { name: "Title" })).toHaveValue(titles[1]);
 
   await page.getByRole("button", { name: "Sign out" }).click();
@@ -162,7 +162,7 @@ test("removing with unsynced changes warns first, naming the notes that would lo
   await page.unroute(NOTEBOOK_ROUTES);
   await Promise.all([syncHasRun(page), signInAs(first)]);
   await expect(page.getByRole("button", { name: "New note" })).toBeVisible();
-  for (const title of titles) await expect(page.getByRole("button", { name: title })).toHaveCount(0);
+  for (const title of titles) await expect(page.getByRole("button", { name: title, exact: true })).toHaveCount(0);
 });
 
 test("a second account on the same browser sees none of the first account's notes", async ({
@@ -183,7 +183,7 @@ test("a second account on the same browser sees none of the first account's note
   await Promise.all([syncHasRun(page), signInAs(second)]);
   await expect(page).toHaveURL("/notes");
   await expect(page.getByRole("button", { name: "New note" })).toBeVisible();
-  await expect(page.getByRole("button", { name: firstTitle })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: firstTitle, exact: true })).toHaveCount(0);
   // The first account's notes are still on the device, in their own database.
   expect(await accountDatabases(page)).toHaveLength(2);
   await createNote(page, secondTitle, "Theirs");
@@ -192,6 +192,6 @@ test("a second account on the same browser sees none of the first account's note
   await expect(page).toHaveURL("/");
 
   await Promise.all([syncHasRun(page), signInAs(first)]);
-  await expect(page.getByRole("button", { name: firstTitle })).toBeVisible();
-  await expect(page.getByRole("button", { name: secondTitle })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: firstTitle, exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: secondTitle, exact: true })).toHaveCount(0);
 });

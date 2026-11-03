@@ -1,3 +1,4 @@
+export { ImageHandlerSource, withImageViews } from "./images";
 export {
   RichTextMode,
   type ImageHandlers,

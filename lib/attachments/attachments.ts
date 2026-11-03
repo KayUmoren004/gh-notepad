@@ -21,6 +21,43 @@ const CONTENT_TYPES: ReadonlyMap<string, string> = new Map([
 /** Attachments are capped at about 10 MB each (ADR 0003). */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
+/**
+ * What a deployment takes in one request. An attachment reaches GitHub in one
+ * request to the attachments route, and serverless hosting caps a request
+ * body (Vercel at about 4.5 MB), so this stays under that.
+ */
+const DEFAULT_ATTACHMENT_LIMIT_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The largest attachment this deployment stores, in bytes: the
+ * `NEXT_PUBLIC_ATTACHMENT_LIMIT_BYTES` environment variable (a whole number
+ * of bytes), otherwise 4 MB, and never over the 10 MB cap. The device's check
+ * and the attachments route read the same value, so an image the deployment
+ * can't store is refused where it is inserted, before anything is stored.
+ */
+export function attachmentLimitBytes(env: { NEXT_PUBLIC_ATTACHMENT_LIMIT_BYTES?: string }): number {
+  const value = env.NEXT_PUBLIC_ATTACHMENT_LIMIT_BYTES ?? "";
+  if (!/^[1-9][0-9]*$/.test(value)) return DEFAULT_ATTACHMENT_LIMIT_BYTES;
+  return Math.min(Number(value), MAX_ATTACHMENT_BYTES);
+}
+
+/** This deployment's limit. The literal `process.env` access is what lets Next inline it for the browser. */
+export const ATTACHMENT_LIMIT_BYTES = attachmentLimitBytes({
+  NEXT_PUBLIC_ATTACHMENT_LIMIT_BYTES: process.env.NEXT_PUBLIC_ATTACHMENT_LIMIT_BYTES,
+});
+
+/** `bytes` in the member's units: "1 KB", "4 MB", "4.5 MB". */
+function formatBytes(bytes: number): string {
+  const megabytes = bytes / (1024 * 1024);
+  const [value, unit] = megabytes >= 1 ? [megabytes, "megabyte"] : [bytes / 1024, "kilobyte"];
+  return new Intl.NumberFormat(undefined, { style: "unit", unit, maximumFractionDigits: 1 }).format(value);
+}
+
+/** The refusal of an image over `limit`, as the member reads it: "Images must be under 4 MB". */
+export function sizeLimitMessage(limit: number): string {
+  return `Images must be under ${formatBytes(limit)}`;
+}
+
 /** The directory that holds a notebook's attachments. */
 export const ATTACHMENTS_DIR = "attachments";
 
@@ -34,12 +71,13 @@ export function isImageType(type: string): boolean {
 
 /**
  * Why a file can't be attached, as a message for the member, or `null` when
- * it can: images of the accepted kinds, under the size cap.
+ * it can: images of the accepted kinds, no larger than `limit` (this
+ * deployment's, unless told otherwise).
  */
-export function imageProblem(file: { type: string; size: number }): string | null {
+export function imageProblem(file: { type: string; size: number }, limit = ATTACHMENT_LIMIT_BYTES): string | null {
   if (!IMAGE_TYPES.has(file.type)) return "Images only (JPEG, PNG, GIF, WebP, SVG)";
   if (file.size === 0) return "The image is empty";
-  if (file.size > MAX_ATTACHMENT_BYTES) return "Images must be under 10 MB";
+  if (file.size > limit) return sizeLimitMessage(limit);
   return null;
 }
 
@@ -84,6 +122,36 @@ export function attachmentLink(path: string): string {
 export function linkToAttachmentPath(link: string): string | null {
   const path = link.startsWith("/") ? link.slice(1) : link;
   return isAttachmentPath(path) ? path : null;
+}
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The note's Markdown without the images that embed the attachment at `path`,
+ * however the note links it (`/attachments/x.png` or `attachments/x.png`,
+ * with or without a title). A line the removal leaves empty goes too, so no
+ * blank paragraph remains where the image stood alone.
+ */
+export function removeImageLinks(markdown: string, path: string): string {
+  const image = new RegExp(`!\\[[^\\]]*\\]\\(\\s*/?${escapeRegExp(path)}(?:\\s+(?:"[^"]*"|'[^']*'))?\\s*\\)`, "g");
+  if (!image.test(markdown)) return markdown;
+  const lines = markdown.split("\n");
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    image.lastIndex = 0;
+    if (!image.test(lines[i])) {
+      kept.push(lines[i]);
+      continue;
+    }
+    const rest = lines[i].replace(image, "");
+    if (rest.trim() !== "") {
+      kept.push(rest);
+      continue;
+    }
+    // The image's own paragraph goes: its line, and the blank line that separated it from the next.
+    if (kept.at(-1)?.trim() === "" && lines[i + 1]?.trim() === "") i++;
+  }
+  return kept.join("\n");
 }
 
 /**

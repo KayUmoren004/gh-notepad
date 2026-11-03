@@ -118,7 +118,7 @@ test("a note with Markdown rich text mode can't show opens in source mode; switc
     files: { [`${title}.md`]: body },
   });
   await signInAs(members.allowed);
-  await page.getByRole("button", { name: title }).click({ timeout: 20_000 });
+  await page.getByRole("button", { name: title, exact: true }).click({ timeout: 20_000 });
 
   await expectMode(page, "Source");
   await expect(noteText(page)).toHaveClass(/cm-content/);
@@ -140,7 +140,7 @@ test("a note with Markdown rich text mode can't show opens in source mode; switc
   // The reload keeps the new note open (its URL survives); on a phone that note covers the tree.
   await page.reload();
   if (isMobile) await page.getByRole("button", { name: "Notes", exact: true }).click();
-  await page.getByRole("button", { name: title }).click();
+  await page.getByRole("button", { name: title, exact: true }).click();
   await expectMode(page, "Source");
   await expect(noteText(page)).toHaveClass(/cm-content/);
 

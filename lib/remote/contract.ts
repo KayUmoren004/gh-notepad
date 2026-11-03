@@ -64,11 +64,35 @@ export interface CommitResponse {
   blobs: Record<string, string>;
 }
 
+/** One commit that touched a note's file, wherever the file was at the time. */
+export interface RemoteVersion {
+  commit: string;
+  /** The note's path at that commit. */
+  path: string;
+  message: string;
+  /** ISO 8601, the commit's author date. */
+  date: string;
+  /** The author's login, or their name when GitHub can't match the commit to an account. */
+  author: string;
+}
+
+export interface VersionsResponse {
+  /** Newest first, following the file back through renames and moves. */
+  versions: RemoteVersion[];
+}
+
+export interface FileAtResponse {
+  /** The file's text at the commit asked for. */
+  text: string;
+}
+
 export type ApiErrorCode =
   | "signed_out"
   | "forbidden"
   | "not_found"
   | "invalid"
+  /** The body is over what this deployment stores (an attachment past its size limit); sending it again won't help. */
+  | "too_large"
   | "branch_moved"
   | "rate_limited"
   | "github_unavailable";
@@ -87,4 +111,7 @@ export const routes = {
   personalNotebook: "/api/notebooks/personal",
   notebook: ({ owner, repo }: { owner: string; repo: string }) =>
     `/api/notebooks/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+  /** The shared-notebook routes (`lib/shared-notebooks-api`): the member's notebooks, and their invitations. */
+  notebooks: "/api/notebooks",
+  invitations: "/api/invitations",
 };

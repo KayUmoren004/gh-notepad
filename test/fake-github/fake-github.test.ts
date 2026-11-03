@@ -420,3 +420,129 @@ describe("fake GitHub: Git Data API", () => {
     ]);
   });
 });
+
+describe("fake GitHub: commits and contents", () => {
+  /** A note added, edited, renamed with an edit, moved into a folder, and edited there. */
+  function history() {
+    const github = createFakeGitHub();
+    const api = apiAs(github, "octo-member");
+    github.addRepo({ owner: "octo-member", name: "notes", files: { "Draft.md": "one\n", "Other.md": "other\n" } });
+    const edit = (message: string, files: Record<string, string | null>) =>
+      github.commitFiles("octo-member", "notes", { message, files });
+    const shas = {
+      added: github.commits("octo-member", "notes")[0].sha,
+      edited: edit("Edit Draft", { "Draft.md": "one\ntwo\n" }),
+      renamed: edit("Rename to Ideas", { "Draft.md": null, "Ideas.md": "one\ntwo\nthree\n" }),
+      other: edit("Edit Other", { "Other.md": "changed\n" }),
+      moved: edit("Move into Projects", { "Ideas.md": null, "Projects/Ideas.md": "one\ntwo\nthree\n" }),
+      final: edit("Edit in Projects", { "Projects/Ideas.md": "one\ntwo\nthree\nfour\n" }),
+    };
+    return { github, api, shas };
+  }
+
+  type CommitListing = { sha: string; commit: { message: string; author: { date: string } }; parents: { sha: string }[] }[];
+  type CommitFiles = { files: Record<string, unknown>[] };
+
+  it("lists a branch's commits newest first, paged, and only those touching a path when asked", async () => {
+    const { api, shas } = history();
+
+    const all = await api("/repos/octo-member/notes/commits?sha=main&per_page=2");
+    const page = (await all.json()) as CommitListing;
+    const byPath = await api("/repos/octo-member/notes/commits?path=Projects%2FIdeas.md&per_page=100");
+
+    expect(all.status).toBe(200);
+    expect(page.map((commit) => commit.sha)).toEqual([shas.final, shas.moved]);
+    expect(page[0].commit.message).toBe("Edit in Projects");
+    expect(page[0].parents).toEqual([expect.objectContaining({ sha: shas.moved })]);
+    expect(page[0].commit.author.date).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    expect(all.headers.get("link")).toContain('rel="next"');
+    expect(((await byPath.json()) as CommitListing).map((commit) => commit.sha)).toEqual([shas.final, shas.moved]);
+  });
+
+  it("lists commits from a given commit, and the deletion of a path counts as touching it", async () => {
+    const { api, shas } = history();
+
+    const response = await api(`/repos/octo-member/notes/commits?sha=${shas.moved}&path=Ideas.md`);
+
+    expect(((await response.json()) as CommitListing).map((commit) => commit.sha)).toEqual([shas.moved, shas.renamed]);
+  });
+
+  it("answers an unknown sha with 404 and an empty repository with 409", async () => {
+    const { github, api } = history();
+    github.addRepo({ owner: "octo-member", name: "empty" });
+
+    expect((await api("/repos/octo-member/notes/commits?sha=nope")).status).toBe(404);
+    expect((await api("/repos/octo-member/empty/commits")).status).toBe(409);
+  });
+
+  it("describes a commit's files, recognising a rename or move as git does", async () => {
+    const { api, shas } = history();
+    const files = async (sha: string) => ((await (await api(`/repos/octo-member/notes/commits/${sha}`)).json()) as CommitFiles).files;
+
+    expect(await files(shas.edited)).toEqual([
+      expect.objectContaining({ filename: "Draft.md", status: "modified", additions: 1, deletions: 0, changes: 1 }),
+    ]);
+    expect(await files(shas.renamed)).toEqual([
+      expect.objectContaining({ filename: "Ideas.md", status: "renamed", previous_filename: "Draft.md" }),
+    ]);
+    expect(await files(shas.moved)).toEqual([
+      expect.objectContaining({ filename: "Projects/Ideas.md", status: "renamed", previous_filename: "Ideas.md", changes: 0 }),
+    ]);
+    expect(await files(shas.added)).toEqual([
+      expect.objectContaining({ filename: "Draft.md", status: "added" }),
+      expect.objectContaining({ filename: "Other.md", status: "added" }),
+    ]);
+    expect((await files(shas.renamed))[0]).not.toHaveProperty("patch");
+  });
+
+  it("treats a removed and an added file with little in common as two changes, not a rename", async () => {
+    const { github, api } = history();
+    const sha = github.commitFiles("octo-member", "notes", {
+      message: "Replace",
+      files: { "Other.md": null, "Unrelated.md": "nothing\nalike\nhere\nat\nall\n" },
+    });
+
+    const { files } = (await (await api(`/repos/octo-member/notes/commits/${sha}`)).json()) as CommitFiles;
+
+    expect(files).toEqual([
+      expect.objectContaining({ filename: "Other.md", status: "removed" }),
+      expect.objectContaining({ filename: "Unrelated.md", status: "added" }),
+    ]);
+  });
+
+  it("serves a file's contents at a ref, raw or as base64 JSON, and 404 where the ref has none", async () => {
+    const { api, shas } = history();
+
+    const raw = await api(`/repos/octo-member/notes/contents/Projects/Ideas.md?ref=${shas.moved}`, {
+      headers: { accept: "application/vnd.github.raw+json" },
+    });
+    const json = await api(`/repos/octo-member/notes/contents/Draft.md?ref=${shas.edited}`);
+    const body = (await json.json()) as Record<string, unknown>;
+    const gone = await api(`/repos/octo-member/notes/contents/Draft.md?ref=${shas.renamed}`);
+    const head = await api("/repos/octo-member/notes/contents/Projects/Ideas.md", {
+      headers: { accept: "application/vnd.github.raw+json" },
+    });
+
+    expect(raw.status).toBe(200);
+    expect(await raw.text()).toBe("one\ntwo\nthree\n");
+    expect(raw.headers.get("content-type")).toContain("application/vnd.github.raw");
+    expect(body).toMatchObject({ type: "file", encoding: "base64", name: "Draft.md", path: "Draft.md", size: 8 });
+    expect(Buffer.from(String(body.content), "base64").toString()).toBe("one\ntwo\n");
+    expect(gone.status).toBe(404);
+    expect(await head.text()).toBe("one\ntwo\nthree\nfour\n");
+  });
+
+  it("lets a seeded outside edit carry its own date, for history made in the past", async () => {
+    const { github, api } = history();
+    const sha = github.commitFiles("octo-member", "notes", {
+      message: "Long ago",
+      files: { "Projects/Ideas.md": "ancient\n" },
+      date: "2024-05-06T07:08:09Z",
+    });
+
+    const body = (await (await api(`/repos/octo-member/notes/commits/${sha}`)).json()) as { commit: { author: { date: string } } };
+
+    expect(body.commit.author.date).toBe("2024-05-06T07:08:09Z");
+    expect(github.commits("octo-member", "notes")[0].author.date).toBe("2024-05-06T07:08:09Z");
+  });
+});

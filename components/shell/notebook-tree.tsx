@@ -1,20 +1,10 @@
 "use client";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, Notebook } from "lucide-react";
-import { Ellipsis } from "lucide-react";
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type MouseEvent,
-  type PointerEvent as ReactPointerEvent,
-  type RefObject,
-} from "react";
+import { ChevronDown, ChevronRight, Ellipsis, FileText, Folder, FolderOpen, Notebook } from "lucide-react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { NotebookRowMenu } from "@/components/notebooks";
 import { useNotepad } from "@/components/notes/notepad-provider";
 import { folderKey, formatNoteCount, type DragSource, type TreeRow } from "@/lib/notebook-tree";
 import { cn } from "@/lib/utils";
@@ -22,7 +12,7 @@ import { NewFolderDialog, type FolderPlace } from "./folder-dialogs";
 import { DESKTOP, useMediaQuery } from "./media";
 import { MoveToSheet } from "./move-to-sheet";
 import { sourceOf, useTreeDrag, type DragState, type TreeDrag } from "./tree-drag";
-import { anchorAt, RowMenu, type MenuAnchor, type RowAction } from "./tree-row-menu";
+import { openRowMenuFrom, RowMenu, type RowAction } from "./tree-row-menu";
 
 /** Rows are dense on desktop and finger-sized on a phone. */
 const ROW_HEIGHT = { desktop: 28, phone: 44 };
@@ -39,6 +29,8 @@ export interface NotebookTreeProps {
   openId: string | null;
   onOpen: (id: string, event: React.MouseEvent) => void;
   onToggle: (key: string) => void;
+  /** Creates a note in a notebook, from the notebook row's menu; a keyboard activation has `event.detail === 0`. */
+  onCreateIn?: (notebook: string, event: React.MouseEvent) => void;
 }
 
 /** Where a new folder goes, and the row to expand so it shows. */
@@ -52,15 +44,14 @@ interface Creating extends FolderPlace {
  * renamed in place, given folders and moved from their menu; on desktop,
  * notes and folders are also dragged into folders.
  */
-export function NotebookTree({ rows, scroller, openId, onOpen, onToggle }: NotebookTreeProps) {
+export function NotebookTree({ rows, scroller, openId, onOpen, onToggle, onCreateIn }: NotebookTreeProps) {
   const { store } = useNotepad();
   const list = useRef<HTMLUListElement>(null);
   const desktop = useMediaQuery(DESKTOP);
   const rowHeight = desktop ? ROW_HEIGHT.desktop : ROW_HEIGHT.phone;
   const [offset, setOffset] = useState(0);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [menu, setMenu] = useState<{ key: string; anchor: MenuAnchor } | null>(null);
-  const menuRow = menu ? (rows.find((row) => row.key === menu.key) ?? null) : null;
+  const [menuKey, setMenuKey] = useState<string | null>(null);
   const [moving, setMoving] = useState<DragSource | null>(null);
   const [creating, setCreating] = useState<Creating | null>(null);
 
@@ -114,16 +105,17 @@ export function NotebookTree({ rows, scroller, openId, onOpen, onToggle }: Noteb
     });
   }
 
-  function act(row: TreeRow, action: RowAction) {
-    if (action === "rename") {
-      setRenaming(row.key);
-      return;
-    }
-    else if (action === "move") setMoving(sourceOf(row));
-    else if (row.kind === "notebook") setCreating({ notebook: row.notebook.id, parent: "", expandKey: row.expanded ? null : row.key });
+  function createIn(row: TreeRow) {
+    if (row.kind === "notebook") setCreating({ notebook: row.notebook.id, parent: "", expandKey: row.expanded ? null : row.key });
     else if (row.kind === "folder") {
       setCreating({ notebook: row.folder.notebook, parent: row.folder.path, expandKey: row.expanded ? null : row.key });
     }
+  }
+
+  function act(row: TreeRow, action: RowAction) {
+    if (action === "rename") setRenaming(row.key);
+    else if (action === "move") setMoving(sourceOf(row));
+    else createIn(row);
   }
 
   function commitRename(row: TreeRow, name: string) {
@@ -139,36 +131,38 @@ export function NotebookTree({ rows, scroller, openId, onOpen, onToggle }: Noteb
 
   return (
     <>
-      <ul ref={list} className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
-        {virtualizer.getVirtualItems().map((item) => {
-          const row = rows[item.index];
-          return (
-            <li
-              key={item.key}
-              className="absolute inset-x-0 top-0"
-              style={{ height: item.size, transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)` }}
-            >
-              <Row
-                row={row}
-                current={row.kind === "note" && row.note.id === openId}
-                renaming={renaming === row.key}
-                menuOpen={menu?.key === row.key}
-                drag={drag}
-                onOpen={onOpen}
-                onToggle={onToggle}
-                onMenu={(anchor) => setMenu({ key: row.key, anchor })}
-                onRename={() => setRenaming(row.key)}
-                onRenameCommit={(name) => commitRename(row, name)}
-                onRenameCancel={() => {
-                  setRenaming(null);
-                  focusRow(row.key);
-                }}
-              />
-            </li>
-          );
-        })}
-      </ul>
-      <RowMenu row={menuRow} anchor={menu?.anchor ?? null} onClose={() => setMenu(null)} onAction={act} />
+      <RowMenu rows={rows} disabled={drag.drag !== null} onOpenChange={setMenuKey} onAction={act}>
+        <ul ref={list} className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+          {virtualizer.getVirtualItems().map((item) => {
+            const row = rows[item.index];
+            return (
+              <li
+                key={item.key}
+                className="absolute inset-x-0 top-0"
+                style={{ height: item.size, transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)` }}
+              >
+                <Row
+                  row={row}
+                  current={row.kind === "note" && row.note.id === openId}
+                  renaming={renaming === row.key}
+                  menuOpen={menuKey === row.key}
+                  drag={drag}
+                  onOpen={onOpen}
+                  onToggle={onToggle}
+                  onCreateIn={onCreateIn}
+                  onCreateFolder={() => createIn(row)}
+                  onRename={() => setRenaming(row.key)}
+                  onRenameCommit={(name) => commitRename(row, name)}
+                  onRenameCancel={() => {
+                    setRenaming(null);
+                    focusRow(row.key);
+                  }}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      </RowMenu>
       {/* What a drop would do, for assistive technology; the ghost shows it to everyone else. */}
       <p aria-live="polite" className="sr-only">
         {drag.drag?.problem ?? ""}
@@ -195,7 +189,13 @@ export function NotebookTree({ rows, scroller, openId, onOpen, onToggle }: Noteb
 /** The dragged item's name beside the pointer, and where it is going or why it can't. */
 function DragGhost({ drag, rows }: { drag: DragState; rows: readonly TreeRow[] }) {
   const over = drag.overKey ? rows.find((row) => row.key === drag.overKey) : undefined;
-  const destination = drag.target ? (drag.target.folder ? drag.target.folder.slice(drag.target.folder.lastIndexOf("/") + 1) : over?.kind === "notebook" ? over.label : "the top level") : null;
+  const destination = drag.target
+    ? drag.target.folder
+      ? drag.target.folder.slice(drag.target.folder.lastIndexOf("/") + 1)
+      : over?.kind === "notebook"
+        ? over.label
+        : "the top level"
+    : null;
   const line = drag.problem ?? (destination !== null ? `Move to ${destination}` : null);
   return createPortal(
     <div
@@ -218,7 +218,8 @@ function Row({
   drag,
   onOpen,
   onToggle,
-  onMenu,
+  onCreateIn,
+  onCreateFolder,
   onRename,
   onRenameCommit,
   onRenameCancel,
@@ -230,16 +231,13 @@ function Row({
   drag: TreeDrag;
   onOpen: NotebookTreeProps["onOpen"];
   onToggle: NotebookTreeProps["onToggle"];
-  /** Opens the row's menu from `anchor`: its "…" button, or the point of a right click. */
-  onMenu: (anchor: MenuAnchor) => void;
+  onCreateIn: NotebookTreeProps["onCreateIn"];
+  onCreateFolder: () => void;
   onRename: () => void;
   onRenameCommit: (name: string) => void;
   onRenameCancel: () => void;
 }) {
   const labelId = useId();
-  // A right click opens the menu once the click is over: on Linux the contextmenu event comes with the press,
-  // and a menu opened then would be dismissed by the release.
-  const rightClick = useRef<{ released: boolean; point: MenuAnchor | null } | null>(null);
   const expandable = row.kind !== "note";
   const expanded = expandable ? row.expanded : undefined;
   const Chevron = expanded ? ChevronDown : ChevronRight;
@@ -254,6 +252,8 @@ function Row({
     (row.kind === "note"
       ? dragging.source.kind === "note" && dragging.source.id === row.note.id
       : row.kind === "folder" && dragging.source.kind === "folder" && dragging.source.path === row.folder.path);
+  // A notebook row's "…" is the notebook menu (new note, collaborators, leaving), which sits beside the row.
+  const notebookMenu = row.kind === "notebook" && onCreateIn ? row.notebook.id : null;
 
   const leading = (
     <>
@@ -266,51 +266,12 @@ function Row({
     </>
   );
 
-  function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    rightClick.current = event.pointerType === "mouse" && event.button === 2 ? { released: false, point: null } : null;
-  }
-
-  /** Opens the menu once the events of the click that asked for it have all been dispatched, or the release would dismiss it. */
-  function openMenuAfterClick(anchor: MenuAnchor) {
-    setTimeout(() => onMenu(anchor), 0);
-  }
-
-  function onPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
-    const press = rightClick.current;
-    if (!press || event.button !== 2) return;
-    press.released = true;
-    if (press.point) {
-      rightClick.current = null;
-      openMenuAfterClick(press.point);
-    }
-  }
-
-  function onContextMenu(event: MouseEvent<HTMLDivElement>) {
-    if (renaming || dragging) return;
-    event.preventDefault();
-    const box = event.currentTarget.getBoundingClientRect();
-    const { clientX: x, clientY: y } = event;
-    // From the pointer it opens at the pointer; from the keyboard (Shift+F10) at the row's "…".
-    const inside = x >= box.left && x <= box.right && y >= box.top && y <= box.bottom && (x !== 0 || y !== 0);
-    const anchor = inside ? anchorAt(x, y) : (event.currentTarget.querySelector("[data-row-menu]") ?? event.currentTarget);
-    const press = rightClick.current;
-    if (press && !press.released) {
-      press.point = anchor;
-      return;
-    }
-    rightClick.current = null;
-    if (press) openMenuAfterClick(anchor);
-    else onMenu(anchor);
-  }
-
   return (
     <div
       data-tree-row={row.key}
+      data-renaming={renaming || undefined}
       data-drop={dropState}
-      className="group relative flex h-full items-center"
-      onPointerDown={onPointerDown}
-      onPointerUp={onPointerUp}
-      onContextMenu={onContextMenu}
+      className="group group/notebook relative flex h-full items-center gap-0.5"
     >
       {renaming ? (
         <div
@@ -345,7 +306,9 @@ function Row({
           }}
           style={{ paddingLeft }}
           className={cn(
-            "pressable flex h-full w-full min-w-0 items-center gap-1.5 rounded-md pr-10 text-left text-base outline-none hover:bg-sidebar-accent/60 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring/50 md:pr-2 md:text-sm",
+            "pressable flex h-full w-full min-w-0 items-center gap-1.5 rounded-md text-left text-base outline-none hover:bg-sidebar-accent/60 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring/50 md:text-sm",
+            // Room for the row's "…", which overlays the end of the row (always on a phone, on hover on desktop).
+            notebookMenu ? "pr-2" : "pr-10 md:pr-2",
             row.kind === "notebook" ? "font-medium text-sidebar-foreground" : "text-muted-foreground",
             current && "bg-sidebar-accent text-sidebar-accent-foreground",
             isSource && "opacity-50",
@@ -358,19 +321,21 @@ function Row({
             {row.label}
           </span>
           {count !== null && (
-            <span
-              aria-hidden
-              className={cn(
-                "shrink-0 text-xs text-muted-foreground/70 tabular-nums md:group-hover:invisible md:group-focus-within:invisible md:pointer-coarse:invisible",
-                menuOpen && "md:invisible",
-              )}
-            >
+            <span aria-hidden className="shrink-0 text-xs text-muted-foreground/70 tabular-nums">
               {number.format(count)}
             </span>
           )}
         </button>
       )}
-      {!renaming && (
+      {!renaming && notebookMenu && (
+        <NotebookRowMenu
+          notebookId={notebookMenu}
+          name={row.label}
+          onCreateNote={(event) => onCreateIn?.(notebookMenu, event)}
+          onCreateFolder={onCreateFolder}
+        />
+      )}
+      {!renaming && !notebookMenu && (
         // The row's "…": named "Actions" and described by the row, so a note called "Old" isn't matched twice.
         <button
           type="button"
@@ -380,7 +345,7 @@ function Row({
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           title="Actions"
-          onClick={(event) => onMenu(event.currentTarget)}
+          onClick={(event: MouseEvent<HTMLButtonElement>) => openRowMenuFrom(event.currentTarget)}
           className={cn(
             "pressable absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
             "md:inset-y-auto md:right-1 md:h-5 md:w-5 md:rounded-sm md:hover:bg-sidebar-accent md:hover:text-sidebar-foreground",

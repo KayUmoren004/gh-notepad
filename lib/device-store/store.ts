@@ -1,4 +1,4 @@
-import { attachmentLink, attachmentPath, imageProblem } from "@/lib/attachments";
+import { attachmentLink, attachmentPath, imageProblem, removeImageLinks } from "@/lib/attachments";
 import {
   folderName,
   folderOfPath,
@@ -26,6 +26,7 @@ import {
   type NoteRow,
   type NotebookRow,
 } from "./database";
+import { createVersionCache, type VersionCache } from "./version-cache";
 
 export type { AgreedVersion } from "./database";
 
@@ -66,10 +67,26 @@ export interface Folder {
 export interface DeviceState {
   /** Every note on the device, by id. Unchanged notes keep their identity across states. */
   notes: ReadonlyMap<string, Note>;
+  /** Every notebook sync has located on GitHub, by id: the personal notebook once found or created, and every shared one. */
+  notebooks: ReadonlyMap<string, Notebook>;
   /** Every folder kept on its own, by notebook and path. Folders that only hold notes aren't here: the tree derives them. */
   folders: ReadonlyMap<string, Folder>;
   /** Counts local edits, so sync can tell typing from its own changes. */
   edits: number;
+  /**
+   * Attachments the notebook refused, oldest first: still shown from the
+   * device copy, out of every push, until removed. Keeps its identity while
+   * nothing about attachments changes.
+   */
+  failedAttachments: readonly FailedAttachment[];
+}
+
+/** An attachment inserted on this device that its notebook refused. */
+export interface FailedAttachment {
+  notebook: string;
+  path: string;
+  /** Why, in the member's words: the refusal the notebook route gave. */
+  reason: string;
 }
 
 export interface NotebookLocation {
@@ -178,10 +195,16 @@ export interface SyncLedger {
     folders?: readonly string[],
   ) => void;
 
-  /** Attachments inserted on this device that no commit holds yet. */
+  /** Attachments inserted on this device that no commit holds yet, and the notebook hasn't refused. */
   pendingAttachments: (notebook: string) => PendingAttachment[];
   /** Records that an attachment's bytes are stored on GitHub as blob `sha`, so a retried push needn't send them again. */
   recordAttachmentBlob: (notebook: string, path: string, sha: string) => void;
+  /**
+   * Records that the notebook refused an attachment for `reason` (it is over
+   * the deployment's size limit): it leaves the pending ones for good, so the
+   * notes that embed it still sync, and is listed in `failedAttachments`.
+   */
+  failAttachment: (notebook: string, path: string, reason: string) => void;
   /** Records that a commit added these attachments to the notebook. The device keeps its copies for showing them offline. */
   applyAttachmentPush: (notebook: string, paths: readonly string[]) => void;
 }
@@ -235,8 +258,23 @@ export interface DeviceStore {
   addAttachment: (notebook: string, image: NewAttachment) => string;
   /** A URL showing the device's copy of the attachment at `path`, or `null` if this device holds none. */
   attachmentSrc: (notebook: string, path: string) => string | null;
+  /**
+   * Forgets an attachment this device holds (one the notebook refused, say)
+   * and takes its images out of every note in the notebook that embeds it,
+   * as an edit, so the notes sync without the link.
+   */
+  removeAttachment: (notebook: string, path: string) => void;
+
+  /**
+   * Removes a notebook from this device with every note and attachment it
+   * holds: after leaving it, or once the member can no longer open it. Edits
+   * not yet synced go with it. The personal notebook can't be forgotten.
+   */
+  forgetNotebook: (id: string) => void;
 
   readonly sync: SyncLedger;
+  /** Commit data the History panel has fetched, kept on the device for good: commits never change. */
+  readonly versions: VersionCache;
 
   /** Writes everything pending to IndexedDB now. */
   flush: () => Promise<void>;
@@ -260,8 +298,13 @@ interface Entry {
   parsed: { text: string; fields: NoteFields };
 }
 
+/** A notebook's id on the device: its repository's full name, lowercased (GitHub matches names case-insensitively). */
+export function notebookId(owner: string, repo: string): string {
+  return `${owner}/${repo}`.toLowerCase();
+}
+
 export function personalNotebookId(login: string): string {
-  return `${login}/my-notes`.toLowerCase();
+  return notebookId(login, "my-notes");
 }
 
 export async function openDeviceStore(options: DeviceStoreOptions): Promise<DeviceStore> {
@@ -293,14 +336,18 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
   const listeners = new Set<() => void>();
   let state: DeviceState = {
     notes: new Map([...entries].map(([key, entry]) => [key, view(entry)])),
+    notebooks: notebookViews(notebooks),
     folders: folderViews(),
     edits: 0,
+    failedAttachments: failedAttachments(attachments),
   };
 
   const pendingNotes = new Set<string>();
   const removedNotes = new Set<string>();
   const pendingNotebooks = new Set<string>();
+  const removedNotebooks = new Set<string>();
   const pendingAttachmentRows = new Set<string>();
+  const removedAttachmentRows = new Map<string, [string, string]>();
   const pendingFolders = new Set<string>();
   /** `[notebook, path]` keys of folder rows to delete: a renamed folder's row moves to a new key. */
   const removedFolders = new Map<string, [string, string]>();
@@ -313,15 +360,25 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
     );
   }
 
-  /** Publishes new views of the changed notes (and of every folder, when they changed), then tells subscribers. */
-  function publish(changed: Iterable<string>, edits = 0, { folders: foldersChanged = false } = {}) {
+  /** Publishes new views of the changed notes (and of the notebooks, folders or attachments, when they changed), then tells subscribers. */
+  function publish(
+    changed: Iterable<string>,
+    edits = 0,
+    { attachments: attachmentsChanged = false, notebooksChanged = false, folders: foldersChanged = false } = {},
+  ) {
     const notes = new Map(state.notes);
     for (const key of changed) {
       const entry = entries.get(key);
       if (entry) notes.set(key, view(entry));
       else notes.delete(key);
     }
-    state = { notes, folders: foldersChanged ? folderViews() : state.folders, edits: state.edits + edits };
+    state = {
+      notes,
+      notebooks: notebooksChanged ? notebookViews(notebooks) : state.notebooks,
+      folders: foldersChanged ? folderViews() : state.folders,
+      edits: state.edits + edits,
+      failedAttachments: attachmentsChanged ? failedAttachments(attachments) : state.failedAttachments,
+    };
     for (const listener of [...listeners]) listener();
   }
 
@@ -351,10 +408,12 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
       const row = notebooks.get(id);
       return row ? [{ ...row }] : [];
     });
+    const forgotten = [...removedNotebooks];
     const images = [...pendingAttachmentRows].flatMap((key) => {
       const row = attachments.get(key);
       return row ? [{ ...row }] : [];
     });
+    const removedImages = [...removedAttachmentRows];
     const kept = [...pendingFolders].flatMap((key) => {
       const row = folders.get(key);
       return row ? [{ ...row }] : [];
@@ -363,10 +422,13 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
     pendingNotes.clear();
     removedNotes.clear();
     pendingNotebooks.clear();
+    removedNotebooks.clear();
     pendingAttachmentRows.clear();
+    removedAttachmentRows.clear();
     pendingFolders.clear();
     removedFolders.clear();
-    if ([notes, removed, books, images, kept, unkept].every((list) => list.length === 0)) return writing;
+    const nothing = [notes, removed, books, forgotten, images, removedImages, kept, unkept].every((list) => list.length === 0);
+    if (nothing) return writing;
 
     writing = writing.then(async () => {
       try {
@@ -374,7 +436,9 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
           if (notes.length > 0) await db.notes.bulkPut(notes);
           if (removed.length > 0) await db.notes.bulkDelete(removed);
           if (books.length > 0) await db.notebooks.bulkPut(books);
+          if (forgotten.length > 0) await db.notebooks.bulkDelete(forgotten);
           if (images.length > 0) await db.attachments.bulkPut(images);
+          if (removedImages.length > 0) await db.attachments.bulkDelete(removedImages.map(([, key]) => key));
           if (unkept.length > 0) await db.folders.bulkDelete(unkept.map(([, key]) => key));
           if (kept.length > 0) await db.folders.bulkPut(kept);
         });
@@ -383,7 +447,9 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
         for (const row of notes) pendingNotes.add(row.key);
         for (const key of removed) removedNotes.add(key);
         for (const row of books) pendingNotebooks.add(row.id);
+        for (const id of forgotten) removedNotebooks.add(id);
         for (const row of images) pendingAttachmentRows.add(attachmentKey(row));
+        for (const [key, id] of removedImages) removedAttachmentRows.set(key, id);
         for (const row of kept) pendingFolders.add(pathKey(row));
         for (const [key, value] of unkept) removedFolders.set(key, value);
         schedule();
@@ -500,8 +566,11 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
 
     locate: (id, { owner, repo, branch }) => {
       const row = notebooks.get(id);
+      if (row && row.owner === owner && row.repo === repo && row.branch === branch) return;
       notebooks.set(id, { id, owner, repo, branch, head: row?.branch === branch ? row.head : null });
       pendingNotebooks.add(id);
+      removedNotebooks.delete(id);
+      publish([], 0, { notebooksChanged: true });
       schedule();
     },
 
@@ -587,7 +656,7 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
 
     pendingAttachments: (notebook) =>
       [...attachments.values()]
-        .filter((row) => row.notebook === notebook && !row.synced)
+        .filter((row) => row.notebook === notebook && !row.synced && !row.failed)
         .map(({ path, type, bytes, sha }) => ({ path, type, bytes, sha })),
 
     recordAttachmentBlob: (notebook, path, sha) => {
@@ -595,6 +664,15 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
       if (!row || row.sha === sha) return;
       row.sha = sha;
       pendingAttachmentRows.add(attachmentKey(row));
+      schedule();
+    },
+
+    failAttachment: (notebook, path, reason) => {
+      const row = attachments.get(attachmentKey({ notebook, path }));
+      if (!row || row.synced || row.failed === reason) return;
+      row.failed = reason;
+      pendingAttachmentRows.add(attachmentKey(row));
+      publish([], 0, { attachments: true });
       schedule();
     },
 
@@ -733,7 +811,61 @@ export async function openDeviceStore(options: DeviceStoreOptions): Promise<Devi
       return url;
     },
 
+    removeAttachment: (notebook, path) => {
+      const key = attachmentKey({ notebook, path });
+      const row = attachments.get(key);
+      if (!row) return;
+      attachments.delete(key);
+      pendingAttachmentRows.delete(key);
+      removedAttachmentRows.set(key, [row.notebook, row.path]);
+      const url = objectUrls.get(key);
+      if (url) {
+        URL.revokeObjectURL(url);
+        objectUrls.delete(key);
+      }
+      const updated = iso();
+      const edited: string[] = [];
+      for (const [id, entry] of entries) {
+        if (entry.row.notebook !== notebook) continue;
+        const body = removeImageLinks(entry.parsed.fields.body, path);
+        if (body === entry.parsed.fields.body) continue;
+        entry.row.text = writeNote(entry.row.text, { body, id, updated });
+        entry.row.revision++;
+        entry.parsed = parse(entry.row.text);
+        edited.push(id);
+      }
+      for (const id of edited) pendingNotes.add(id);
+      // An edit only when a note changed: that is what there is to sync.
+      publish(edited, edited.length > 0 ? 1 : 0, { attachments: true });
+    },
+
+    forgetNotebook: (id) => {
+      if (id === personalNotebook) return;
+      const keys = [...entries].filter(([, { row }]) => row.notebook === id).map(([key]) => key);
+      for (const key of keys) {
+        entries.delete(key);
+        pendingNotes.delete(key);
+        removedNotes.add(key);
+      }
+      for (const [key, row] of [...attachments]) {
+        if (row.notebook !== id) continue;
+        attachments.delete(key);
+        pendingAttachmentRows.delete(key);
+        removedAttachmentRows.set(key, [row.notebook, row.path]);
+        const url = objectUrls.get(key);
+        if (url) {
+          URL.revokeObjectURL(url);
+          objectUrls.delete(key);
+        }
+      }
+      if (notebooks.delete(id)) removedNotebooks.add(id);
+      pendingNotebooks.delete(id);
+      publish(keys, 0, { notebooksChanged: true });
+      schedule();
+    },
+
     sync,
+    versions: createVersionCache(db),
     flush,
     close: async () => {
       await flush();
@@ -754,6 +886,19 @@ function attachmentKey({ notebook, path }: { notebook: string; path: string }): 
 
 function pathKey({ notebook, path }: { notebook: string; path: string }): string {
   return `${notebook}\u0000${path}`;
+}
+
+/** The refused attachments among `rows`, in the order they were inserted. */
+function failedAttachments(rows: ReadonlyMap<string, AttachmentRow>): FailedAttachment[] {
+  const failed: FailedAttachment[] = [];
+  for (const row of rows.values()) {
+    if (row.failed && !row.synced) failed.push({ notebook: row.notebook, path: row.path, reason: row.failed });
+  }
+  return failed;
+}
+
+function notebookViews(rows: ReadonlyMap<string, NotebookRow>): ReadonlyMap<string, Notebook> {
+  return new Map([...rows].map(([id, row]) => [id, { ...row }]));
 }
 
 function parse(text: string): Entry["parsed"] {

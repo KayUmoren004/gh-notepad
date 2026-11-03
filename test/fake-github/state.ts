@@ -291,7 +291,13 @@ export function branchHead(repo: FakeRepo, branch = repo.defaultBranch): string 
 export function commitFiles(
   state: FakeState,
   repo: FakeRepo,
-  change: { message: string; files: Record<string, string | null>; branch?: string },
+  change: {
+    message: string;
+    files: Record<string, string | null>;
+    branch?: string;
+    /** The commit's date (ISO 8601), to seed history made in the past. Default: now. */
+    date?: string;
+  },
 ): string {
   const branch = change.branch ?? repo.defaultBranch;
   const parent = branchHead(repo, branch);
@@ -302,6 +308,7 @@ export function commitFiles(
     else files.set(path, { mode: "100644", sha: writeBlob(repo.objects, Buffer.from(content)).sha });
   }
   const signature = signatureOf(state, addUser(state, { login: repo.owner }));
+  if (change.date) signature.date = new Date(change.date).toISOString().replace(".000Z", "Z");
   const commit = writeCommit(repo.objects, {
     tree: buildTree(repo.objects, files).sha,
     parents: parent ? [parent] : [],
