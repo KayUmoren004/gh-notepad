@@ -18,6 +18,40 @@ test("the signed-in app opens offline after one online visit", async ({ page, co
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
 });
 
+test("after signing out, the app no longer opens offline as the member", async ({ page, context, signInAs }) => {
+  await signInAs(members.allowed);
+  await expect(page).toHaveURL("/notes");
+  await waitUntilAvailableOffline(page);
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL("/");
+  await context.setOffline(true);
+  await page.goto("/notes");
+
+  await expect(page.getByRole("heading", { name: "You're offline" })).toBeVisible();
+  await expect(page.locator("[data-app-shell]")).toHaveCount(0);
+});
+
+test("once the server says no one is signed in, the app no longer opens offline", async ({
+  page,
+  context,
+  signInAs,
+}) => {
+  await signInAs(members.allowed);
+  await expect(page).toHaveURL("/notes");
+  await waitUntilAvailableOffline(page);
+
+  // The session ends elsewhere (it expired, or its cookie was cleared): the server redirects.
+  await context.clearCookies();
+  await page.goto("/notes");
+  await expect(page).toHaveURL("/");
+  await context.setOffline(true);
+  await page.goto("/notes");
+
+  await expect(page.getByRole("heading", { name: "You're offline" })).toBeVisible();
+  await expect(page.locator("[data-app-shell]")).toHaveCount(0);
+});
+
 test("authenticated API responses are never stored or served by the service worker", async ({
   page,
   context,

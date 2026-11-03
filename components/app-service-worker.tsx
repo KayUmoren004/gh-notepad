@@ -49,14 +49,15 @@ export function AppServiceWorker() {
 
     const register = async () => {
       if (!active) return;
-      try {
-        registration = await container.register(SCRIPT_URL, { scope: "/", updateViaCache: "none" });
-      } catch {
-        return; // Blocked or unsupported: the app still works online.
-      }
-      offerWhenWaiting(registration.waiting);
-      offerWhenWaiting(registration.installing);
-      registration.addEventListener("updatefound", () => offerWhenWaiting(registration?.installing ?? null));
+      // Blocked or unsupported (it fails, or, blocked by Playwright, resolves to nothing): the app still works online.
+      const registered: ServiceWorkerRegistration | undefined = await container
+        .register(SCRIPT_URL, { scope: "/", updateViaCache: "none" })
+        .catch(() => undefined);
+      if (!registered || !active) return;
+      registration = registered;
+      offerWhenWaiting(registered.waiting);
+      offerWhenWaiting(registered.installing);
+      registered.addEventListener("updatefound", () => offerWhenWaiting(registered.installing));
 
       if (!servedByWorker) {
         const ready = await container.ready;
