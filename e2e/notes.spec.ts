@@ -55,6 +55,7 @@ test("an edit on one device shows up on the other without a reload", async ({
   await page.getByRole("button", { name: "New note" }).click();
   await page.keyboard.type(title);
   await page.keyboard.press("Enter");
+  await expect(page.getByRole("textbox", { name: "Note text" })).toBeFocused();
   await page.keyboard.type("First draft");
   await expect(page.getByRole("status")).toHaveText("Synced", { timeout: 20_000 });
 

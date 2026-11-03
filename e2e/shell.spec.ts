@@ -190,6 +190,7 @@ test("a note's URL names it by id: it survives a reload and a rename, and Back a
   await expect(titleOf(page)).toBeFocused();
   await page.keyboard.type(title);
   await page.keyboard.press("Enter");
+  await expect(page.getByRole("textbox", { name: "Note text" })).toBeFocused();
   await page.keyboard.type("Body");
   await expect(page.getByRole("status")).toHaveText("Synced", { timeout: 20_000 });
 

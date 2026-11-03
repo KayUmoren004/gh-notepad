@@ -105,7 +105,8 @@ function Shell({ member }: { member: ShellMember }) {
 
       <NoteScreen open={noteOpen} animate={!desktop && animate} onBack={back} onPhaseChange={setScreenPhase}>
         {viewedId !== null ? (
-          <NoteView id={viewedId} focusTitle={viewedId === createdId} onBack={back} />
+          // Keyed by note: the editor's per-note state (mode, title draft) starts afresh with each note.
+          <NoteView key={viewedId} id={viewedId} focusTitle={viewedId === createdId} onBack={back} />
         ) : (
           <NothingOpen />
         )}
