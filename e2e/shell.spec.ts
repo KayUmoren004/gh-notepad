@@ -164,7 +164,8 @@ test("on a phone the tree is the home screen, and a note opens full screen with 
   // The tree is still there underneath, keeping its place, but out of reach.
   await expect(sidebar).toBeHidden();
   await expect(breadcrumbOf(page)).toBeHidden();
-  const back = page.getByRole("button", { name: "Back to Garden" });
+  // The back button is named by where it leads: the folder the note is in.
+  const back = page.getByRole("button", { name: "Garden", exact: true });
   await expect(back).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("phone-390-note.png") });
 
@@ -308,7 +309,8 @@ test("on a phone, going back returns to the tree where it was scrolled", async (
   await expect(page).toHaveURL(/\/notes\/[0-9a-f-]{36}$/);
   await expect(sidebarOf(page)).toBeHidden();
 
-  await page.getByRole("button", { name: /^Back to / }).click();
+  // The note tapped is an Archive entry, so the way back is named after that folder.
+  await page.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(page).toHaveURL("/notes");
   await expect(sidebarOf(page)).toBeVisible();
   expect(await notes.evaluate((element) => element.scrollTop)).toBe(scrolled);

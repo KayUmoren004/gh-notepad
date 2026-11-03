@@ -43,10 +43,10 @@ export function TopBar({ crumbs, onBack, backLabel = "Notes", children, classNam
           </Button>
         )}
         {onBack && (
+          // Named by where it leads, as a phone's back buttons are: "Notes", or the folder the note is in.
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`Back to ${backLabel}`}
             className="-ml-1 max-w-48 min-w-0 justify-start pl-1 text-muted-foreground md:hidden"
             onClick={onBack}
           >
