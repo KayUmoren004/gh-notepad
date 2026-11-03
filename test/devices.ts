@@ -22,6 +22,7 @@ export interface Device {
   login: string;
   /** The browser's IndexedDB, shared by every account signed in on it. */
   indexedDB: IDBFactory;
+  cookies: CookieJar;
   store: DeviceStore;
   engine: SyncEngine;
   /** Runs a sync to completion (joining one already running, and its follow-up). */
@@ -47,6 +48,11 @@ export interface World {
   signIn: (login: string, options?: SignInOptions) => Promise<Device>;
   /** Holds the next request to GitHub that matches, to act while it is in flight. */
   holdGitHub: (matches: (request: Request) => boolean) => Hold;
+  /** Calls the app's notebook routes directly, with `as`'s cookies (or none). */
+  callApi: (
+    path: string,
+    init?: { method?: string; body?: unknown; headers?: Record<string, string>; as?: Device },
+  ) => Promise<Response>;
 }
 
 export function createWorld({ members = ["octo-member"] }: { members?: string[] } = {}): World {
@@ -102,6 +108,7 @@ export function createWorld({ members = ["octo-member"] }: { members?: string[] 
     return {
       login: session.member.login,
       indexedDB,
+      cookies: jar,
       store,
       engine,
       sync: () => engine.sync(),
@@ -124,6 +131,19 @@ export function createWorld({ members = ["octo-member"] }: { members?: string[] 
       jar.store(await auth.callback(new NextRequest(callback, { headers: { cookie: jar.header() } })));
       return open(jar, sameBrowserAs?.indexedDB ?? new IDBFactory(), options);
     },
+
+    callApi: (path, { method = "GET", body, headers = {}, as } = {}) =>
+      api.handle(
+        new NextRequest(new URL(path, appUrl), {
+          method,
+          headers: {
+            ...(as ? { cookie: as.cookies.header() } : {}),
+            ...(body === undefined ? {} : { "content-type": "application/json" }),
+            ...headers,
+          },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        }),
+      ),
 
     holdGitHub: (matches) => {
       let reached!: () => void;
