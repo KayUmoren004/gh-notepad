@@ -100,7 +100,11 @@ test("offline, History says it needs a connection instead of failing, and loads 
 
   await context.setOffline(true);
   await page.evaluate(() => window.dispatchEvent(new Event("offline")));
-  await page.getByRole("button", { name: "History" }).click();
+  // Opened from the command palette this time, which lists "Open history" while a note is on screen.
+  await page.keyboard.press("ControlOrMeta+k");
+  const palette = page.getByRole("dialog", { name: "Search" });
+  await palette.getByRole("combobox", { name: "Search notes" }).fill("history");
+  await palette.getByRole("option", { name: "Open history" }).click();
   const panel = historyPanel(page, isMobile);
   await expect(panel.getByRole("status")).toContainText("History needs a connection");
 
