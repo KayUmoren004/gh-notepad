@@ -4,7 +4,7 @@ import type { Node as ProseMirrorNode, Schema } from "@tiptap/pm/model";
 import { Marked } from "marked";
 import { micromark, parse, postprocess, preprocess } from "micromark";
 import { gfm, gfmHtml } from "micromark-extension-gfm";
-import { isAutolink, LIST_TYPES, MARKDOWN_SOURCE } from "./document-extensions";
+import { isAutolink, LIST_TYPES, MARKDOWN_SOURCE, SOFT_BREAK } from "./document-extensions";
 
 /** One top-level block of a Markdown document and the whitespace before it. */
 export interface SourceBlock {
@@ -191,7 +191,7 @@ export class MarkdownCodec {
       const json = this.manager.parse(context.linkDefinitions ? `${source}\n\n${context.linkDefinitions}` : source);
       const content = (json.content ?? []).filter((child) => child.type);
       if (content.length !== 1) return null;
-      const [block] = content;
+      const block = this.withSoftBreaks(content[0]);
       if (block.type && LIST_TYPES.has(block.type)) block.attrs = { ...block.attrs, ...listStyleOf(source) };
       const node = this.schema.nodeFromJSON(block);
       node.check();
@@ -199,6 +199,22 @@ export class MarkdownCodec {
     } catch {
       return null;
     }
+  }
+
+  /** Newlines in paragraph text (soft line breaks) as soft-break nodes; code keeps its newlines. */
+  private withSoftBreaks(node: JSONContent): JSONContent {
+    if (!node.content || (node.type && this.codeTypes.has(node.type))) return node;
+    const content = node.content.flatMap((child): JSONContent[] => {
+      const inCode = (child.marks ?? []).some((mark) => this.codeTypes.has(mark.type));
+      if (child.type !== "text" || inCode || !child.text?.includes("\n")) return [this.withSoftBreaks(child)];
+      return child.text
+        .split("\n")
+        .flatMap((part, index) => [
+          ...(index > 0 ? [{ type: SOFT_BREAK, marks: child.marks }] : []),
+          ...(part ? [{ ...child, text: part }] : []),
+        ]);
+    });
+    return { ...node, content };
   }
 
   private encodeText(text: string, node: JSONContent, parent?: JSONContent): string {

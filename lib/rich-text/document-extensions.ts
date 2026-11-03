@@ -18,7 +18,13 @@ import { common, createLowlight } from "lowlight";
 /** The node holding Markdown rich text mode can't express, shown and edited as source. */
 export const MARKDOWN_SOURCE = "markdownSource";
 
-export const lowlight = createLowlight(common);
+const languages = createLowlight(common);
+
+/** Highlighting for code blocks that name a known language; others (prose, `mermaid`, …) stay plain. */
+const lowlight: typeof languages = {
+  ...languages,
+  highlightAuto: (value) => ({ type: "root", children: [{ type: "text", value }], data: { language: undefined, relevance: 0 } }),
+};
 
 const textOf = (node: JSONContent): string => (node.content ?? []).map((child) => child.text ?? "").join("");
 
@@ -43,6 +49,67 @@ const MarkdownSource = Node.create({
   },
 
   renderMarkdown: (node) => textOf(node),
+});
+
+/**
+ * A line break inside a paragraph that Markdown renders as a space, kept so a
+ * rewritten paragraph keeps its lines. A newline inside a text node would
+ * not survive the browser: ProseMirror re-reads typed text from the DOM.
+ */
+export const SOFT_BREAK = "softBreak";
+
+const SoftBreak = Node.create({
+  name: SOFT_BREAK,
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: false,
+
+  parseHTML() {
+    return [{ tag: "span[data-soft-break]" }];
+  },
+
+  renderHTML() {
+    return ["span", { "data-soft-break": "" }, " "];
+  },
+
+  renderMarkdown: () => "\n",
+});
+
+/**
+ * Ticking a task's checkbox, without the focus that Tiptap's own handler
+ * applies first: on Android that focus redraws the item, the item loses its
+ * position, and the tick is dropped. Not focusing also keeps a phone's
+ * keyboard closed while ticking tasks.
+ */
+const GfmTaskItem = TaskItem.extend({
+  addNodeView() {
+    const createView = this.parent?.();
+    if (!createView) return null;
+    return (props) => {
+      const view = createView(props);
+      // Tiptap's node view leaves out the type its HTML carries; styles and the check below need it.
+      if (view.dom instanceof HTMLElement) view.dom.dataset.type = "taskItem";
+      // Capture runs before the checkbox's own listener, which stopPropagation then skips.
+      view.dom.addEventListener(
+        "change",
+        (event) => {
+          const checkbox = event.target;
+          if (!(checkbox instanceof HTMLInputElement) || checkbox.closest('li[data-type="taskItem"]') !== view.dom) return;
+          event.stopPropagation();
+          const position = props.getPos();
+          if (!props.editor.isEditable || typeof position !== "number") {
+            checkbox.checked = !checkbox.checked;
+            return;
+          }
+          const { checked } = checkbox;
+          props.editor.view.dispatch(props.editor.state.tr.setNodeAttribute(position, "checked", checked));
+        },
+        true,
+      );
+      return view;
+    };
+  },
 });
 
 /** Escapes what would start a different block at the beginning of a line of paragraph text. */
@@ -155,8 +222,10 @@ export function documentExtensions(): Extensions {
     GfmBulletList,
     GfmOrderedList,
     GfmTaskList,
-    TaskItem.configure({ nested: true }),
-    TableKit.configure({ table: { resizable: false } }),
+    GfmTaskItem.configure({ nested: true }),
+    SoftBreak,
+    // The wrapper lets a wide table scroll sideways on a phone instead of the page.
+    TableKit.configure({ table: { resizable: false, renderWrapper: true } }),
     MarkdownSource,
   ];
 }

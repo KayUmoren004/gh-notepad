@@ -10,7 +10,7 @@ import { MarkdownDocumentExtension } from "./markdown-document-extension";
  * rich text mode can't express faithfully are kept as Markdown source.
  */
 
-export { MARKDOWN_SOURCE, lowlight } from "./document-extensions";
+export { MARKDOWN_SOURCE } from "./document-extensions";
 export { mergeMarkdown } from "./merge";
 
 /** The editor extensions for a note body, loaded from `markdown`. */
