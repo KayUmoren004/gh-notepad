@@ -36,6 +36,12 @@ const imagesIn = (body: Locator) => body.locator("img:not(.ProseMirror-separator
 
 const synced = (page: Page) => expect(page.getByRole("status")).toHaveText("Synced", { timeout: 20_000 });
 
+/** The Share button in the note's actions ("New shared notebook" in the sidebar also contains the word). */
+const shareButton = (page: Page, name = "Share") => page.getByRole("button", { name, exact: true });
+
+// Copying the link writes to the clipboard, which Chromium only allows a page that was granted it.
+test.use({ permissions: ["clipboard-read", "clipboard-write"] });
+
 test("a share link shows the note and its image to anyone, follows the next sync, and stops working when revoked", async ({
   page,
   browser,
@@ -51,18 +57,19 @@ test("a share link shows the note and its image to anyone, follows the next sync
   await synced(page);
 
   // Share: the link appears once the copy is published, and can be copied.
-  await page.getByRole("button", { name: "Share" }).click();
+  await shareButton(page).click();
   const dialog = page.getByRole("dialog", { name: "Share" });
   await expect(dialog.getByText("Not shared")).toBeVisible();
   await dialog.getByRole("button", { name: "Create link" }).click();
   const linkField = dialog.getByRole("textbox", { name: "Share link" });
   await expect(linkField).toHaveValue(/\/s\/[A-Za-z0-9_-]{22}$/, { timeout: 20_000 });
   const link = await linkField.inputValue();
-  await dialog.getByRole("button", { name: "Copy" }).click();
+  await dialog.getByRole("button", { name: "Copy", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "Copied" })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(link);
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole("button", { name: "Share, link active" })).toBeVisible();
+  await expect(shareButton(page, "Share, link active")).toBeVisible();
 
   // Anyone: a browser with no cookies and no account.
   const visitor = await browser.newContext();
@@ -74,6 +81,7 @@ test("a share link shows the note and its image to anyone, follows the next sync
   const image = view.locator("article img");
   await expect(image).toHaveAttribute("src", /^\/s\/[A-Za-z0-9_-]{22}\/attachments\/[0-9a-f-]{36}\.png$/);
   await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(1);
+  const imageUrl = new URL((await image.getAttribute("src")) ?? "", link).toString();
   await expect(view.getByRole("link", { name: "Shared from Notepad" })).toBeVisible();
   expect(await view.title()).toBe(`${title} · Notepad`);
   await expect(view.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
@@ -91,7 +99,7 @@ test("a share link shows the note and its image to anyone, follows the next sync
   await expect(view.getByText("Day two brought rain.")).toBeVisible();
 
   // Stop sharing: the link is gone for everyone.
-  await page.getByRole("button", { name: "Share, link active" }).click();
+  await shareButton(page, "Share, link active").click();
   await dialog.getByRole("button", { name: "Stop sharing" }).click();
   await expect(dialog.getByText("The link stops working for everyone who has it.")).toBeVisible();
   await dialog.getByRole("button", { name: "Stop sharing" }).click();
@@ -99,11 +107,11 @@ test("a share link shows the note and its image to anyone, follows the next sync
   const gone = await view.reload();
   expect(gone?.status()).toBe(404);
   await expect(view.getByText("This note is no longer shared")).toBeVisible();
-  expect((await visitor.request.get(link.replace(/\/s\//, "/s/") + "/" + (await image.getAttribute("src"))?.split("/").slice(3).join("/"))).status()).toBe(404);
+  expect((await visitor.request.get(imageUrl)).status()).toBe(404);
   await visitor.close();
 
   // The note itself is untouched, and synced without the share.
   await page.keyboard.press("Escape");
   await synced(page);
-  await expect(page.getByRole("button", { name: "Share" })).toBeVisible();
+  await expect(shareButton(page)).toBeVisible();
 });

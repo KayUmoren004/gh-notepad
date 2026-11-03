@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Copy } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNote, useNotepad, useSyncStatus } from "@/components/notes/notepad-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -39,6 +39,7 @@ export function ShareDialog({ noteId, open, onOpenChange }: ShareDialogProps) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [problem, setProblem] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const linkField = useRef<HTMLInputElement>(null);
 
   /** Closing forgets the dialog's transient state: a confirmation left open, a problem, "Copied". */
   function changeOpen(next: boolean) {
@@ -81,7 +82,10 @@ export function ShareDialog({ noteId, open, onOpenChange }: ShareDialogProps) {
       await navigator.clipboard.writeText(link);
       setCopied(true);
     } catch {
-      setProblem("Copy the link from the box");
+      // A browser that refuses the clipboard still lets the member copy the selected text.
+      linkField.current?.focus();
+      linkField.current?.select();
+      setProblem("The browser wouldn't copy; the link is selected for you to copy");
     }
   }
 
@@ -103,7 +107,7 @@ export function ShareDialog({ noteId, open, onOpenChange }: ShareDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogContent aria-describedby={undefined}>
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Share</DialogTitle>
           <DialogDescription>
@@ -115,6 +119,7 @@ export function ShareDialog({ noteId, open, onOpenChange }: ShareDialogProps) {
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <Input
+                ref={linkField}
                 readOnly
                 value={link}
                 aria-label="Share link"

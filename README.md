@@ -17,6 +17,7 @@ An invite-only, local-first notepad: notes are Markdown files in GitHub reposito
 | `OWNER_GITHUB_USER` | The owner's GitHub login; always allowed to sign in. Anyone the owner invites to one of their notebooks may sign in too, and their invitation is accepted as they do. |
 | `ALLOWED_GITHUB_USERS` | Other logins allowed to sign in, comma-separated (case-insensitive). |
 | `NEXT_PUBLIC_ATTACHMENT_LIMIT_BYTES` | Optional: the largest image a note may attach, in bytes (see [Known limits](#known-limits)). Default 4 MB (`4194304`); never over 10 MB. Set at build time, since the browser reads it too. |
+| `BLOB_READ_WRITE_TOKEN` | A Vercel Blob store's read-write token: where share links' published copies live, as private blobs. Without it, copies are kept in the server's memory and last until it restarts (fine for development and tests, not for a deployment). |
 | `GITHUB_API_BASE_URL`, `GITHUB_OAUTH_BASE_URL` | Test-only: point the GitHub gateway at the fake GitHub. Leave unset in production. |
 
 ## Development
