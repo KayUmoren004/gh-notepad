@@ -10,7 +10,7 @@ const eslintConfig = defineConfig([
     files: ["e2e/**"],
     rules: { "react-hooks/rules-of-hooks": "off" },
   },
-  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts", "playwright-report/**", "test-results/**"]),
+  globalIgnores([".claude/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "playwright-report/**", "test-results/**"]),
 ]);
 
 export default eslintConfig;

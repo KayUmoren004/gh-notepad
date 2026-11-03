@@ -16,7 +16,7 @@ export default defineConfig({
     // Unit and integration tests are `*.test.ts(x)` files next to the code
     // they cover. Playwright owns `e2e/*.spec.ts`.
     include: ["**/*.test.{ts,tsx}"],
-    exclude: ["node_modules/**", ".next/**", "e2e/**"],
+    exclude: ["node_modules/**", ".next/**", "e2e/**", ".claude/**"],
     environment: "node",
     setupFiles: ["test/setup.ts"],
   },
