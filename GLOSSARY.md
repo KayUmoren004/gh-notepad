@@ -54,6 +54,10 @@ _Avoid_: Upload, blob, asset
 Where deleted notes and folders wait, restorable, until they are permanently deleted.
 _Avoid_: Bin, archive
 
+**Command palette**:
+The box opened with ⌘K (Ctrl+K) or Search in the sidebar that finds any note on the device by its title, text or tags and runs actions.
+_Avoid_: Quick open, spotlight, omnibar
+
 ## Editing
 
 **Rich text mode**:
