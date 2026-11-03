@@ -252,8 +252,9 @@ function VersionList({ history, onSelect }: { history: History; onSelect: (versi
   );
 }
 
+// `w-full`: a button sizes to its content even as a block, so a long message would widen it instead of truncating.
 const row =
-  "pressable flex min-w-0 flex-1 flex-col gap-0.5 rounded-md px-3 py-2 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 pointer-coarse:py-2.5";
+  "pressable flex w-full min-w-0 flex-1 flex-col gap-0.5 rounded-md px-3 py-2 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 pointer-coarse:py-2.5";
 
 function SessionRow({ session, login, onSelect }: { session: Session; login: string; onSelect: (version: Version) => void }) {
   const [expanded, setExpanded] = useState(false);
