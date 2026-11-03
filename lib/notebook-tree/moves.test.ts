@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildNotebookTrees, dropProblem, moveDestinations, type DragSource, type TreeNoteInput } from ".";
 
 const notebook = "mira/my-notes";
-const plan: DragSource = { kind: "note", notebook, folder: "Projects/Garden", title: "Plan" };
+const plan: DragSource = { kind: "note", id: "plan", notebook, folder: "Projects/Garden", title: "Plan" };
 const garden: DragSource = { kind: "folder", notebook, path: "Projects/Garden" };
 
 describe("dropProblem", () => {

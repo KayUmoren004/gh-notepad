@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { flattenTrees, keysAbove } from "@/lib/notebook-tree";
 import { cn } from "@/lib/utils";
 import { useDevicePreference } from "./device-preferences";
+import { NewFolderAction } from "./folder-dialogs";
 import { modifierLabel } from "./media";
 import { pathOfNote } from "./note-route";
 import { NotebookTree } from "./notebook-tree";
@@ -99,6 +100,7 @@ export function Sidebar({ member, openId, onOpen, onCreate, className }: Sidebar
           <SidebarAction icon={SquarePen} hint={`${hint}N`} onClick={onCreate}>
             New note
           </SidebarAction>
+          <NewFolderAction />
           {/* TODO(#10): search opens the command palette; until that ticket lands the slot is disabled. */}
           <SidebarAction icon={Search} hint={`${hint}K`} disabled>
             Search
@@ -178,7 +180,8 @@ function SectionLabel({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
-function SidebarAction({
+/** One of the sidebar's actions: an icon, a label, and on desktop a shortcut hint. */
+export function SidebarAction({
   icon: Icon,
   hint,
   disabled,

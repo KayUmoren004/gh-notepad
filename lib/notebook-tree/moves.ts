@@ -3,7 +3,7 @@ import type { NotebookTree, TreeFolder } from "./tree";
 
 /** What is being moved: a note, or a folder with everything in it. */
 export type DragSource =
-  | { kind: "note"; notebook: string; folder: string; title: string }
+  | { kind: "note"; id: string; notebook: string; folder: string; title: string }
   | { kind: "folder"; notebook: string; path: string };
 
 /** Where it could go: a folder of a notebook, `""` for the top level. */

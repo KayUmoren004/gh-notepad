@@ -5,6 +5,7 @@ import { RichTextMode, type RichTextModeHandle } from "@/components/rich-text-mo
 import { TopBar } from "@/components/shell";
 import { ModeToggle, SourceMode } from "@/components/source-mode";
 import { breadcrumbOf } from "@/lib/notebook-tree";
+import { MoreMenu } from "./more-menu";
 import { useNoteImages } from "./note-images";
 import {
   cursorAnchor,
@@ -109,6 +110,7 @@ export function NoteEditor({
         {/* The note's actions: the mode toggle now, history, share and more as their tickets land. */}
         <div data-slot="note-actions" className="flex items-center gap-0.5">
           <ModeToggle mode={mode} onChange={switchMode} />
+          <MoreMenu note={note} onRename={() => (title.current?.focus(), title.current?.select())} />
         </div>
       </TopBar>
 

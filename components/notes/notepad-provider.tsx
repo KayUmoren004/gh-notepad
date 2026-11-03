@@ -91,10 +91,10 @@ export function useNotes(): Note[] {
 /** Every notebook on the device as a tree of folders and notes, the personal notebook always among them. */
 export function useNotebookTrees(): NotebookTree[] {
   const { store } = useNotepad();
-  const { notes } = useSyncExternalStore(store.subscribe, store.getState, store.getState);
+  const { notes, folders } = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   return useMemo(
-    () => buildNotebookTrees(notes.values(), { notebooks: [store.personalNotebook] }),
-    [notes, store.personalNotebook],
+    () => buildNotebookTrees(notes.values(), { notebooks: [store.personalNotebook], folders: folders.values() }),
+    [notes, folders, store.personalNotebook],
   );
 }
 
