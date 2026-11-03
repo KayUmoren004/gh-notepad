@@ -25,9 +25,9 @@ async function newNote(page: Page, title: string): Promise<Locator> {
   await page.getByRole("button", { name: "New note" }).click();
   const titleField = page.getByRole("textbox", { name: "Title" });
   await expect(titleField).toBeFocused();
-  // Replace the placeholder title whatever is selected (notes.spec.ts covers the placeholder being selected).
-  await page.keyboard.press("ControlOrMeta+a");
-  await page.keyboard.type(title);
+  // Set in one go: a pull that renames the placeholder (another "Untitled" exists in the shared notebook)
+  // would collapse the selection mid-typing. notes.spec.ts covers typing over the selected placeholder.
+  await titleField.fill(title);
   await expect(titleField).toHaveValue(title);
   await page.keyboard.press("Enter");
   const body = page.getByRole("textbox", { name: "Note text" });
