@@ -3,11 +3,12 @@
 import { FileText, Hash, PanelLeftClose, Search, SquarePen, Trash2, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { AccountMenu, type AccountMember } from "@/components/account/account-menu";
+import { InvitationsBanner, NewNotebookButton } from "@/components/notebooks";
 import { MigrationNotice } from "@/components/notes/migration-notice";
 import { useNote, useNotebookTrees, useRecentNotes } from "@/components/notes/notepad-provider";
 import { SyncNotices } from "@/components/notes/sync-notices";
 import { Button } from "@/components/ui/button";
-import { flattenTrees, keysAbove } from "@/lib/notebook-tree";
+import { flattenTrees, keysAbove, notebookKey } from "@/lib/notebook-tree";
 import { cn } from "@/lib/utils";
 import { useDevicePreference } from "./device-preferences";
 import { modifierLabel } from "./media";
@@ -22,7 +23,8 @@ export interface SidebarProps {
   openId: string | null;
   /** Opens a note. A keyboard activation (`event.detail === 0`) is `instant`: no push animation. */
   onOpen: (id: string, options: { instant: boolean }) => void;
-  onCreate: () => void;
+  /** Creates a note in the personal notebook, or in `notebook`, and opens it. */
+  onCreate: (options?: { notebook?: string; instant?: boolean }) => void;
   className?: string;
 }
 
@@ -96,7 +98,7 @@ export function Sidebar({ member, openId, onOpen, onCreate, className }: Sidebar
           </Button>
         </div>
         <div className="mt-2 flex flex-col gap-px">
-          <SidebarAction icon={SquarePen} hint={`${hint}N`} onClick={onCreate}>
+          <SidebarAction icon={SquarePen} hint={`${hint}N`} onClick={() => onCreate()}>
             New note
           </SidebarAction>
           {/* TODO(#10): search opens the command palette; until that ticket lands the slot is disabled. */}
@@ -144,14 +146,27 @@ export function Sidebar({ member, openId, onOpen, onCreate, className }: Sidebar
           </section>
         )}
 
+        <InvitationsBanner className="mb-4" />
         <section aria-labelledby="sidebar-notebooks">
-          <SectionLabel id="sidebar-notebooks">Notebooks</SectionLabel>
+          <div className="flex items-center justify-between">
+            <SectionLabel id="sidebar-notebooks">Notebooks</SectionLabel>
+            {/* A notebook just created starts expanded, so its first notes show as they arrive. */}
+            <NewNotebookButton
+              className="mb-1"
+              onCreated={(id) => {
+                const next = new Set(collapsed);
+                next.delete(notebookKey(id));
+                saveCollapsed(next);
+              }}
+            />
+          </div>
           <NotebookTree
             rows={rows}
             scroller={scroller}
             openId={openId}
             onOpen={(id, event) => onOpen(id, { instant: event.detail === 0 })}
             onToggle={toggleFolder}
+            onCreateIn={(notebook, event) => onCreate({ notebook, instant: event.detail === 0 })}
           />
           {empty && <p className="px-2 pt-1 text-sm text-muted-foreground">No notes yet. Start one with New note.</p>}
         </section>

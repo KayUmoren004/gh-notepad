@@ -3,6 +3,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, Notebook } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { NotebookRowMenu } from "@/components/notebooks";
 import { formatNoteCount, type TreeRow } from "@/lib/notebook-tree";
 import { cn } from "@/lib/utils";
 import { DESKTOP, useMediaQuery } from "./media";
@@ -22,13 +23,15 @@ export interface NotebookTreeProps {
   openId: string | null;
   onOpen: (id: string, event: React.MouseEvent) => void;
   onToggle: (key: string) => void;
+  /** Creates a note in a notebook and opens it, from the notebook row's menu. */
+  onCreateIn?: (notebook: string, event: React.MouseEvent) => void;
 }
 
 /**
  * The notebook tree as a list, virtualised: a notebook with thousands of
  * notes renders only the rows in view, so scrolling stays smooth.
  */
-export function NotebookTree({ rows, scroller, openId, onOpen, onToggle }: NotebookTreeProps) {
+export function NotebookTree({ rows, scroller, openId, onOpen, onToggle, onCreateIn }: NotebookTreeProps) {
   const list = useRef<HTMLUListElement>(null);
   const desktop = useMediaQuery(DESKTOP);
   const rowHeight = desktop ? ROW_HEIGHT.desktop : ROW_HEIGHT.phone;
@@ -71,7 +74,21 @@ export function NotebookTree({ rows, scroller, openId, onOpen, onToggle }: Noteb
             className="absolute inset-x-0 top-0"
             style={{ height: item.size, transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)` }}
           >
-            <Row row={row} current={row.kind === "note" && row.note.id === openId} onOpen={onOpen} onToggle={onToggle} />
+            {row.kind === "notebook" ? (
+              // The notebook row and its "…" menu side by side: the menu can't live inside the row's button.
+              <div className="group/notebook flex h-full items-center gap-0.5">
+                <Row row={row} current={false} onOpen={onOpen} onToggle={onToggle} />
+                {onCreateIn && (
+                  <NotebookRowMenu
+                    notebookId={row.notebook.id}
+                    name={row.label}
+                    onCreateNote={(event) => onCreateIn(row.notebook.id, event)}
+                  />
+                )}
+              </div>
+            ) : (
+              <Row row={row} current={row.kind === "note" && row.note.id === openId} onOpen={onOpen} onToggle={onToggle} />
+            )}
           </li>
         );
       })}
