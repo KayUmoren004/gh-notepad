@@ -16,6 +16,12 @@ export const members = {
   stranger: "octo-stranger",
 } as const;
 
+/** Allowed members whose personal notebooks are seeded with v1 data, one per Playwright project. */
+export const v1Members: Record<string, string> = {
+  desktop: "octo-v1-desktop",
+  phone: "octo-v1-phone",
+};
+
 const oauthApp = {
   GITHUB_CLIENT_ID: "e2e-client-id",
   GITHUB_CLIENT_SECRET: "e2e-client-secret",
@@ -34,7 +40,7 @@ export const appEnv = {
   NEXT_PUBLIC_APP_URL: appUrl,
   SESSION_SECRET: "e2e-session-secret-that-is-at-least-32-characters",
   OWNER_GITHUB_USER: members.owner,
-  ALLOWED_GITHUB_USERS: members.allowed,
+  ALLOWED_GITHUB_USERS: [members.allowed, ...Object.values(v1Members)].join(","),
   GITHUB_API_BASE_URL: fakeGitHubUrl,
   GITHUB_OAUTH_BASE_URL: fakeGitHubUrl,
 };
