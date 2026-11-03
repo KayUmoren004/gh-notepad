@@ -131,7 +131,7 @@ test("a note with Markdown rich text mode can't show opens in source mode; switc
   await modeToggle(page).getByRole("button", { name: "Source" }).click();
   await expect(noteText(page)).toHaveClass(/cm-content/);
   // Switching notes syncs; on a phone the open note covers the list, so go back to it first.
-  if (isMobile) await page.getByRole("button", { name: "Notes" }).click();
+  if (isMobile) await page.getByRole("button", { name: "Notes", exact: true }).click();
   await page.getByRole("button", { name: "New note" }).click();
   await expect(page.getByRole("status")).toHaveText("Synced", { timeout: 20_000 });
   expect((await fakeGitHub.files(members.allowed, "my-notes"))[`${title}.md`]).toBe(body);
