@@ -1,15 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2a2826"/>
-      <stop offset="1" stop-color="#191817"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="112" fill="url(#tile)"/>
-  <g>
-    <path d="M180 132 H284 L352 200 V360 A20 20 0 0 1 332 380 H180 A20 20 0 0 1 160 360 V152 A20 20 0 0 1 180 132 Z" fill="#e7e4df" stroke="#e7e4df" stroke-width="16" stroke-linejoin="round"/>
-    <path d="M284 132 V188 A12 12 0 0 0 296 200 H352 Z" fill="#b3ada4" stroke="#b3ada4" stroke-width="8" stroke-linejoin="round"/>
-    <path d="M200 236 H280" stroke="#2a2826" stroke-width="22" stroke-linecap="round"/>
-         <path d="M200 284 H312 M200 320 H312 M200 356 H264" stroke="#9d9890" stroke-width="14" stroke-linecap="round"/>
+  <rect width="512" height="512" rx="146.3" fill="#e7e4df"/>
+  <g transform="translate(109.71 109.71) scale(12.1905)" fill="none" stroke="#191817" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"/>
+    <path d="M2 6h4M2 10h4M2 14h4M2 18h4"/>
+    <path d="M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/>
   </g>
 </svg>
