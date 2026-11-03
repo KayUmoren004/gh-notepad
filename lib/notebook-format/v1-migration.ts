@@ -1,5 +1,14 @@
 import { readNote, writeNote } from "./note-file";
-import { fallbackNoteId, folderOfPath, notePath, sanitizeTitle, titleOfPath, uniqueTitle } from "./paths";
+import {
+  fallbackNoteId,
+  folderOfPath,
+  isNotePath,
+  notePath,
+  sanitizeTitle,
+  titleOfPath,
+  uniqueTitle,
+  UNTITLED,
+} from "./paths";
 
 /** A file's path and text content. */
 export interface TextFile {
@@ -148,10 +157,16 @@ function ancestors(path: string): string[] {
   return segments.map((_, index) => segments.slice(0, index + 1).join("/"));
 }
 
-/** v1 folders are one level of free-text names; each becomes a top-level folder, `""` for none. */
+/**
+ * v1 folders are one level of free-text names; each becomes a top-level
+ * folder (`""` for none), moved aside from names the notebook keeps for
+ * other things, such as `attachments`.
+ */
 function folderOf(name: unknown): string {
-  const folder = text(name);
-  return folder === null ? "" : sanitizeTitle(folder);
+  const raw = text(name);
+  if (raw === null) return "";
+  const folder = sanitizeTitle(raw);
+  return isNotePath(notePath(folder, UNTITLED)) ? folder : uniqueTitle(folder, [folder]);
 }
 
 /** A field's text, trimmed; `null` when it is missing, empty or not a string. */

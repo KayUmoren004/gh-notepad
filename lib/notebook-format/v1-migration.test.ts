@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { migrateV1 } from ".";
+import { isNotePath, isSafePath, migrateV1 } from ".";
 
 /** A v1 note file as v1 wrote it: `JSON.stringify(note, null, 2)` at `notes/<id>.json`. */
 function v1Note(fields: Record<string, unknown>): { path: string; text: string } {
@@ -226,6 +226,25 @@ describe("v1 migration: typical v1 data", () => {
 
     expect(migration.notes.map((note) => note.path)).toEqual(["Work/Roadmap.md"]);
     expect(migration.folders).toEqual(["Recipes/.gitkeep", "Travel plans/.gitkeep"]);
+  });
+
+  it("makes every v1 folder name a folder that holds notes, at the top level of the notebook", () => {
+    const folders = ["attachments", ".trash", "Q1/Q2", "..", "CON", "Ünïcødé 📁"];
+    const migration = migrateV1(
+      folders.map((folder, index) =>
+        v1Note({ id: `n${index}`, title: "Note", content: "", folder, tags: [], createdAt: "", updatedAt: "" }),
+      ),
+    );
+
+    expect(migration.notes.map((note) => note.path)).toEqual([
+      "attachments 2/Note.md",
+      "trash/Note.md",
+      "Q1-Q2/Note.md",
+      "Untitled/Note.md",
+      "CON_/Note.md",
+      "Ünïcødé 📁/Note.md",
+    ]);
+    for (const { path } of migration.notes) expect(isNotePath(path) && isSafePath(path)).toBe(true);
   });
 
   it("only reads v1's files: notes directly in notes/ and the root metadata.json", () => {
