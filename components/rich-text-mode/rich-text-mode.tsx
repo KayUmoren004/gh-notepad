@@ -3,7 +3,7 @@
 import { Extension } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extensions";
 import { EditorContent, useEditor } from "@tiptap/react";
-import { useEffect, useRef, useState } from "react";
+import { type Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { getMarkdown, mergeMarkdown, richTextExtensions } from "@/lib/rich-text";
 import { cn } from "@/lib/utils";
 import { FormatBar, TableBar } from "./format-bar";
@@ -28,6 +28,12 @@ export interface RichTextModeProps {
   /** Offers "Image" in the slash menu; resolves to the image to insert, or null if the member cancelled. */
   onPickImage?: PickImage;
   className?: string;
+  ref?: Ref<RichTextModeHandle>;
+}
+
+export interface RichTextModeHandle {
+  /** Puts the cursor at the start of the note body. */
+  focus: () => void;
 }
 
 /** Mod+K opens the link field for the selection. */
@@ -61,6 +67,7 @@ export function RichTextMode({
   autoFocus = false,
   onPickImage,
   className,
+  ref,
 }: RichTextModeProps) {
   // The Markdown this editor and its owner last agreed on: the last value in or out.
   const agreed = useRef(value);
@@ -105,6 +112,8 @@ export function RichTextMode({
       handlers.current.onChange(markdown);
     },
   });
+
+  useImperativeHandle(ref, () => ({ focus: () => editor?.commands.focus("start") }), [editor]);
 
   useEffect(() => {
     if (!editor || value === agreed.current) return;

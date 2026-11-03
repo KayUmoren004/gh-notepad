@@ -2,15 +2,16 @@
 
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { RichTextMode, type RichTextModeHandle } from "@/components/rich-text-mode";
 import { Button } from "@/components/ui/button";
-import { BodyField } from "./body-field";
 import { useNote, useNotepad } from "./notepad-provider";
 import { SyncIndicator } from "./sync-indicator";
 
 /**
  * The editor for one note, given its id: a title (the note's file name) and its
- * body, saved to the device as they change. Self-contained, so layouts can
- * place it anywhere and rich text mode can take over the body field.
+ * body in rich text mode, saved to the device as they change. A sync that
+ * changes the body is merged into rich text mode in place. Self-contained, so
+ * layouts can place it anywhere.
  */
 export function NoteEditor({
   noteId,
@@ -26,7 +27,7 @@ export function NoteEditor({
   const { store } = useNotepad();
   const note = useNote(noteId);
   const title = useRef<HTMLInputElement>(null);
-  const body = useRef<HTMLTextAreaElement>(null);
+  const body = useRef<RichTextModeHandle>(null);
   // What the member is typing into the title: the stored title is sanitised, and mustn't fight the keyboard.
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
 
@@ -72,7 +73,13 @@ export function NoteEditor({
             autoComplete="off"
             className="w-full min-w-0 bg-transparent text-3xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground"
           />
-          <BodyField ref={body} value={note.body} onChange={(text) => store.editBody(noteId, text)} />
+          <RichTextMode
+            key={noteId}
+            ref={body}
+            label="Note text"
+            value={note.body}
+            onChange={(text) => store.editBody(noteId, text)}
+          />
         </div>
       </div>
     </article>
