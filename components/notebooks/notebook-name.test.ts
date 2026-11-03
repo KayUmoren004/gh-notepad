@@ -3,11 +3,11 @@ import { checkNotebookName, notebookSlug, usernameToInvite } from "./notebook-na
 
 describe("a shared notebook's name", () => {
   it.each([
-    ["Book club", "Book-club"],
+    ["Book club", "book-club"],
     ["  family   trip 2026 ", "family-trip-2026"],
-    ["Été à Paris!", "t-Paris"],
+    ["Été à Paris!", "t-paris"],
     ["--dashes--", "dashes"],
-    ["notes.v2", "notes.v2"],
+    ["Notes.v2", "notes.v2"],
     ["日記", ""],
   ])("turns %j into the repository name %j", (typed, slug) => {
     expect(notebookSlug(typed)).toBe(slug);
@@ -23,7 +23,7 @@ describe("a shared notebook's name", () => {
   });
 
   it("keeps the personal notebook's name, .git names and over-long names from being created", () => {
-    expect(checkNotebookName("My Notes")).toMatchObject({ slug: "My-Notes", problem: "my-notes is your personal notebook" });
+    expect(checkNotebookName("My Notes")).toMatchObject({ slug: "my-notes", problem: "my-notes is your personal notebook" });
     expect(checkNotebookName("notes.git")).toMatchObject({ problem: "A name can't end in .git" });
     expect(checkNotebookName("x".repeat(101))).toMatchObject({ problem: "Keep it to 100 characters" });
     expect(checkNotebookName("x".repeat(100)).problem).toBeNull();

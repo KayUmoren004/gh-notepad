@@ -132,7 +132,7 @@ export function useNotebooks(): NotebookSummary[] {
       if (summaries.has(notebook.id)) continue;
       summaries.set(notebook.id, {
         id: notebook.id,
-        name: notebook.repo,
+        name: notebookName(notebook.id),
         owner: notebook.owner,
         repo: notebook.repo,
         kind: "shared",

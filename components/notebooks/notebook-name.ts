@@ -1,8 +1,9 @@
 /**
  * The name of a shared notebook, as the member types it, turned into the name
  * of the repository it becomes: GitHub repository names allow letters, digits,
- * `.`, `-` and `_` only, so spaces become hyphens and the rest is dropped. The
- * app shows the member what will be created, and explains what it can't.
+ * `.`, `-` and `_` only, so spaces become hyphens and the rest is dropped; it
+ * is lowercased too, the way the app names notebooks everywhere. The app shows
+ * the member what will be created, and explains what it can't.
  */
 
 /** The personal notebook's repository name, which a shared notebook can't take. */
@@ -19,6 +20,7 @@ export interface NotebookNameCheck {
 export function notebookSlug(typed: string): string {
   return typed
     .trim()
+    .toLowerCase()
     .replace(/\s+/g, "-")
     .replace(/[^A-Za-z0-9._-]/g, "")
     .replace(/-{2,}/g, "-")
