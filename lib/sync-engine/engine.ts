@@ -1,5 +1,5 @@
 import type { DeviceStore } from "@/lib/device-store";
-import { fallbackNoteId, isNotePath, isV1Path } from "@/lib/notebook-format";
+import { fallbackNoteId, isNotePath, isV1Path, titleOfPath } from "@/lib/notebook-format";
 import { RemoteError, type NotebookRef, type Remote, type RemoteFile } from "@/lib/remote";
 import { planMigration, type MigrationReport, type PendingMigration } from "./migration";
 import { planPush } from "./push";
@@ -14,6 +14,20 @@ export type SyncStatus =
   | { state: "signed-out" }
   /** The last sync failed; it is retried automatically at `retryAt`. */
   | { state: "failed"; message: string; retryAt: number | null };
+
+/**
+ * A note that changed on this device and in its notebook in ways that
+ * couldn't be merged. The note kept the device's version; the notebook's is
+ * in a conflict copy beside it, for the member to look at.
+ */
+export interface Conflict {
+  notebook: string;
+  noteId: string;
+  /** The conflict copy. */
+  copyId: string;
+  /** The note's title when the conflict was found. */
+  title: string;
+}
 
 /** Time, injectable so tests can drive the triggers. */
 export interface Timers {
@@ -42,6 +56,13 @@ export interface SyncEngine {
    * `subscribe`, with the sync that made them.
    */
   getMigrationReport: () => MigrationReport | null;
+  /**
+   * Conflicts found since the app opened, oldest first, until the member
+   * dismisses them (the conflict copies themselves stay). Changes are
+   * announced through `subscribe`.
+   */
+  getConflicts: () => readonly Conflict[];
+  dismissConflict: (copyId: string) => void;
   subscribe: (listener: () => void) => () => void;
   /**
    * Syncs now, or right after the sync already running (at most one follow-up
@@ -85,6 +106,7 @@ export function createSyncEngine({
   /** v1 conversions found by a pull, waiting for the push that commits them, by notebook. */
   const migrations = new Map<string, PendingMigration>();
   let migrated: MigrationReport | null = null;
+  let conflicts: readonly Conflict[] = [];
 
   let idleTimer: unknown;
   let firstPendingEdit: number | null = null;
@@ -93,9 +115,13 @@ export function createSyncEngine({
   let unsubscribe: (() => void) | undefined;
   let removeBrowserTriggers: (() => void) | undefined;
 
+  function notify() {
+    for (const listener of [...listeners]) listener();
+  }
+
   function setStatus(next: SyncStatus) {
     status = next;
-    for (const listener of [...listeners]) listener();
+    notify();
   }
 
   function sync(): Promise<void> {
@@ -190,13 +216,26 @@ export function createSyncEngine({
     // Decided and applied in one step: no edit can land in between.
     const records = store.sync.records(id);
     const ids = { fallback: (path: string) => fallbackNoteId(id, path), random: () => crypto.randomUUID() };
-    const changes = reconcile(records, notes, ids);
+    const { changes, conflicts: found } = reconcile(records, notes, ids);
     const migration =
       v1.length > 0 ? planMigration(head.commit, v1.map(withText), { records, pulled: changes, remote: notes }) : null;
     if (migration) migrations.set(id, migration);
     else migrations.delete(id);
     // Until the conversion is committed this head counts as unseen, so a reload before then converts again.
     store.sync.applyPull(id, migration ? null : head.commit, migration ? [...changes, ...migration.notes] : changes);
+    if (found.length > 0) {
+      conflicts = [
+        ...conflicts,
+        ...found.map(({ noteId, copyId }) => ({
+          notebook: id,
+          noteId,
+          copyId,
+          title: titleOfPath(store.note(noteId)?.path ?? ""),
+        })),
+      ];
+      // The status change that ends this sync announces them too; this covers listeners that read conflicts alone.
+      notify();
+    }
   }
 
   /** Pushes every unsynced note in one commit on top of the head this device last saw. */
@@ -267,6 +306,12 @@ export function createSyncEngine({
   return {
     getStatus: () => status,
     getMigrationReport: () => migrated,
+    getConflicts: () => conflicts,
+    dismissConflict: (copyId) => {
+      if (!conflicts.some((conflict) => conflict.copyId === copyId)) return;
+      conflicts = conflicts.filter((conflict) => conflict.copyId !== copyId);
+      notify();
+    },
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

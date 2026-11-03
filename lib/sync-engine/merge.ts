@@ -24,10 +24,13 @@ export function mergeNote(device: string, base: string, remote: string): MergeOu
   const body = mergeLines(ours.body, agreed.body, theirs.body);
   if (body === null) return { conflict: true };
 
-  const meta: NoteChanges = {};
-  for (const field of ["tags", "created", "updated"] as const) {
-    if (sameField(ours[field], agreed[field]) && !sameField(theirs[field], agreed[field])) meta[field] = theirs[field];
-  }
+  const followsRemote = (field: "tags" | "created" | "updated") =>
+    sameField(ours[field], agreed[field]) && !sameField(theirs[field], agreed[field]);
+  const meta: NoteChanges = {
+    tags: followsRemote("tags") ? theirs.tags : null,
+    created: followsRemote("created") ? theirs.created : null,
+    updated: followsRemote("updated") ? theirs.updated : null,
+  };
   return { conflict: false, text: writeNote(device, { ...meta, body }) };
 }
 
