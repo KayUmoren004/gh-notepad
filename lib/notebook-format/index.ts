@@ -1,0 +1,20 @@
+/**
+ * The notebook format (ADR 0001): how notes are laid out as files in a
+ * notebook's repository. Pure functions, used on the device and on the server.
+ *
+ * - A note is `<folder path>/<title>.md`: Markdown with optional YAML
+ *   frontmatter holding `id`, `tags`, `created` and `updated`.
+ * - Reading and writing never disturb what they don't change: an unchanged
+ *   note serialises to the original bytes.
+ */
+export { readNote, writeNote, type NoteChanges, type NoteFields } from "./note-file";
+export {
+  folderOfPath,
+  isNotePath,
+  isSafePath,
+  notePath,
+  sanitizeTitle,
+  titleOfPath,
+  uniqueTitle,
+  UNTITLED,
+} from "./paths";
