@@ -256,6 +256,23 @@ describe("changes made outside the app", () => {
     });
   });
 
+  it("a new note whose title a note from elsewhere took meanwhile is re-titled, never written over it", async () => {
+    const world = createWorld();
+    const laptop = await world.signIn(member);
+    await laptop.sync();
+    const id = laptop.store.createNote();
+    laptop.store.rename(id, "Ideas");
+    laptop.store.editBody(id, "From the laptop\n");
+    world.github.commitFiles(member, notebook, { message: "Add on github.com", files: { "Ideas.md": "From github.com\n" } });
+
+    await laptop.sync();
+
+    const files = world.github.files(member, notebook);
+    expect(files["Ideas.md"]).toBe("From github.com\n");
+    expect(readNote(files["Ideas 2.md"])).toMatchObject({ id, body: "From the laptop\n" });
+    expect(laptop.store.note(id)).toMatchObject({ title: "Ideas 2", synced: true });
+  });
+
   it("a note deleted in the repository leaves the device", async () => {
     const world = createWorld();
     const laptop = await world.signIn(member);
