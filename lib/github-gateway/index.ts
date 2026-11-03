@@ -1,5 +1,6 @@
 import "server-only";
 import { apiCaller, errorMessage, GitHubError, record, text } from "./http";
+import { memberGitHub, type MemberGitHub } from "./notebooks";
 import { sharedNotebooksGitHub, type SharedNotebooksGitHub } from "./shared-notebooks";
 
 /**
@@ -10,6 +11,16 @@ import { sharedNotebooksGitHub, type SharedNotebooksGitHub } from "./shared-note
  */
 
 export { GITHUB_API_VERSION, GitHubError } from "./http";
+export {
+  gitBlobSha,
+  PERSONAL_NOTEBOOK,
+  type CommitOutcome,
+  type FileChange,
+  type MemberGitHub,
+  type NotebookFile,
+  type NotebookLocation,
+  type RepositoryName,
+} from "./notebooks";
 export {
   NOTEBOOK_TOPIC,
   type Collaborator,
@@ -67,7 +78,7 @@ export interface GitHubGateway {
   /** The account a token belongs to. */
   getAuthenticatedUser: (accessToken: string) => Promise<GitHubUser>;
   /** Notebook operations acting as `member`, whose login was resolved once, at sign-in. */
-  forMember: (member: MemberCredentials) => SharedNotebooksGitHub;
+  forMember: (member: MemberCredentials) => MemberGitHub & SharedNotebooksGitHub;
 }
 
 /** The gateway configured from `GITHUB_*` environment variables. */
@@ -147,7 +158,10 @@ export function createGitHubGateway(options: GitHubGatewayOptions): GitHubGatewa
       return { login, id: body.id, name: text(body.name) ?? null, avatarUrl: text(body.avatar_url) ?? "" };
     },
 
-    forMember: ({ login, accessToken }) => sharedNotebooksGitHub(apiCaller(send, apiBase, accessToken), login),
+    forMember: ({ login, accessToken }) => {
+      const api = apiCaller(send, apiBase, accessToken);
+      return { ...memberGitHub(api, login), ...sharedNotebooksGitHub(api, login) };
+    },
   };
 }
 

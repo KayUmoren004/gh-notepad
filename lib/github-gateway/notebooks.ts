@@ -1,0 +1,205 @@
+import "server-only";
+import { createHash } from "node:crypto";
+import { GitHubError, record, text, type ApiCall } from "./http";
+
+/** The personal notebook's repository name, in the member's own account. */
+export const PERSONAL_NOTEBOOK = "my-notes";
+
+/** Blob reads in flight at once, well under GitHub's 100 concurrent requests. */
+const BLOB_CONCURRENCY = 8;
+
+/** Where a notebook lives: a repository and the branch the app reads and writes. */
+export interface NotebookLocation {
+  owner: string;
+  repo: string;
+  branch: string;
+}
+
+/** A notebook's repository, for reads that name a commit rather than a branch. */
+export type RepositoryName = Pick<NotebookLocation, "owner" | "repo">;
+
+/** A file in a notebook at some commit. */
+export interface NotebookFile {
+  path: string;
+  /** Git blob SHA: equal SHAs mean equal content. */
+  sha: string;
+}
+
+export type FileChange = { path: string; content: string } | { path: string; delete: true };
+
+export type CommitOutcome =
+  /** `blobs` holds the blob SHA of every file written, by path. */
+  | { status: "committed"; commit: string; blobs: Record<string, string> }
+  /** The branch no longer points at the base commit: pull, merge and try again. */
+  | { status: "branch-moved" };
+
+/** Notebook operations on GitHub, acting as one signed-in member. */
+export interface MemberGitHub {
+  /** The member's personal notebook (`<login>/my-notes`), created private with an initial commit if missing. */
+  ensurePersonalNotebook: () => Promise<NotebookLocation>;
+  /**
+   * The branch's head commit. With the `known` commit it is a conditional
+   * request: an unchanged branch answers 304, which costs no rate limit.
+   */
+  getHead: (notebook: NotebookLocation, known: string | null) => Promise<{ commit: string; changed: boolean }>;
+  /** Every file in the notebook at `commit`. */
+  listFiles: (notebook: RepositoryName, commit: string) => Promise<NotebookFile[]>;
+  /** The content of text blobs (notes), by SHA. */
+  readTextBlobs: (notebook: RepositoryName, shas: readonly string[]) => Promise<Record<string, string>>;
+  /**
+   * Commits every change at once on top of `base` and moves the branch to it,
+   * never forcing: if someone else moved the branch first, nothing changes and
+   * the outcome is `branch-moved`.
+   */
+  commitChanges: (
+    notebook: NotebookLocation,
+    commit: { base: string; message: string; changes: readonly FileChange[] },
+  ) => Promise<CommitOutcome>;
+}
+
+/** Git's blob SHA for UTF-8 text, so callers can recognise their own content in later listings. */
+export function gitBlobSha(content: string): string {
+  const bytes = Buffer.from(content, "utf8");
+  return createHash("sha1")
+    .update(Buffer.concat([Buffer.from(`blob ${bytes.length}\0`), bytes]))
+    .digest("hex");
+}
+
+const segment = encodeURIComponent;
+
+function repoPath({ owner, repo }: { owner: string; repo: string }): string {
+  return `/repos/${segment(owner)}/${segment(repo)}`;
+}
+
+function branchPath(branch: string): string {
+  return branch.split("/").map(segment).join("/");
+}
+
+function locationOf(body: Record<string, unknown>): NotebookLocation {
+  const owner = text(record(body.owner).login);
+  const repo = text(body.name);
+  const branch = text(body.default_branch);
+  if (!owner || !repo || !branch) throw new GitHubError("Unexpected repository response", 502);
+  return { owner, repo, branch };
+}
+
+export function memberGitHub(api: ApiCall, login: string): MemberGitHub {
+  async function getJson(path: string): Promise<Record<string, unknown>> {
+    return record(await (await api(path)).json());
+  }
+
+  return {
+    ensurePersonalNotebook: async () => {
+      const path = repoPath({ owner: login, repo: PERSONAL_NOTEBOOK });
+      try {
+        return locationOf(await getJson(path));
+      } catch (error) {
+        if (!(error instanceof GitHubError) || error.status !== 404) throw error;
+      }
+      try {
+        // `auto_init` gives the repository its first commit: the Git Data API refuses empty repositories.
+        const response = await api("/user/repos", {
+          method: "POST",
+          body: {
+            name: PERSONAL_NOTEBOOK,
+            description: "My notes, kept by gh-notepad",
+            private: true,
+            auto_init: true,
+          },
+        });
+        return locationOf(record(await response.json()));
+      } catch (error) {
+        // Created meanwhile, by another device signing in at the same moment.
+        if (error instanceof GitHubError && error.status === 422) return locationOf(await getJson(path));
+        throw error;
+      }
+    },
+
+    getHead: async (notebook, known) => {
+      const response = await api(`${repoPath(notebook)}/commits/${branchPath(notebook.branch)}`, {
+        accept: "application/vnd.github.sha",
+        headers: known ? { "if-none-match": `"${known}"` } : {},
+      });
+      if (response.status === 304 && known) return { commit: known, changed: false };
+      const commit = (await response.text()).trim();
+      if (!/^[0-9a-f]{40}$/.test(commit)) throw new GitHubError("Unexpected head commit response", 502);
+      return { commit, changed: commit !== known };
+    },
+
+    listFiles: async (notebook, commit) => {
+      const body = await getJson(`${repoPath(notebook)}/git/trees/${segment(commit)}?recursive=1`);
+      if (body.truncated === true) {
+        throw new GitHubError("This notebook has more files than GitHub lists in one tree", 507);
+      }
+      const entries = Array.isArray(body.tree) ? body.tree.map(record) : [];
+      return entries.flatMap((entry) => {
+        const path = text(entry.path);
+        const sha = text(entry.sha);
+        return entry.type === "blob" && path && sha ? [{ path, sha }] : [];
+      });
+    },
+
+    readTextBlobs: async (notebook, shas) => {
+      const contents: Record<string, string> = {};
+      const queue = [...new Set(shas)];
+      async function worker() {
+        for (let sha = queue.shift(); sha !== undefined; sha = queue.shift()) {
+          const body = await getJson(`${repoPath(notebook)}/git/blobs/${segment(sha)}`);
+          const content = typeof body.content === "string" ? body.content : "";
+          contents[sha] =
+            body.encoding === "base64" ? Buffer.from(content.replace(/\s/g, ""), "base64").toString("utf8") : content;
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(BLOB_CONCURRENCY, queue.length) }, worker));
+      return contents;
+    },
+
+    commitChanges: async (notebook, { base, message, changes }) => {
+      const repo = repoPath(notebook);
+      const baseCommit = await getJson(`${repo}/git/commits/${segment(base)}`);
+      const baseTree = text(record(baseCommit.tree).sha);
+      if (!baseTree) throw new GitHubError("Unexpected commit response", 502);
+
+      // Text goes inline: GitHub writes the blobs itself, saving a request per file.
+      const tree = record(
+        await (
+          await api(`${repo}/git/trees`, {
+            method: "POST",
+            body: {
+              base_tree: baseTree,
+              tree: changes.map((change) =>
+                "delete" in change
+                  ? { path: change.path, mode: "100644", type: "blob", sha: null }
+                  : { path: change.path, mode: "100644", type: "blob", content: change.content },
+              ),
+            },
+          })
+        ).json(),
+      );
+      const created = record(
+        await (
+          await api(`${repo}/git/commits`, { method: "POST", body: { message, tree: tree.sha, parents: [base] } })
+        ).json(),
+      );
+      const commit = text(created.sha);
+      if (!commit) throw new GitHubError("Unexpected commit response", 502);
+
+      try {
+        await api(`${repo}/git/refs/heads/${branchPath(notebook.branch)}`, {
+          method: "PATCH",
+          body: { sha: commit, force: false },
+        });
+      } catch (error) {
+        // GitHub's only signal that someone else pushed first (the GitHub CLI branches on it too).
+        if (error instanceof GitHubError && error.status === 422 && /not a fast forward/i.test(error.message)) {
+          return { status: "branch-moved" };
+        }
+        throw error;
+      }
+
+      const blobs: Record<string, string> = {};
+      for (const change of changes) if (!("delete" in change)) blobs[change.path] = gitBlobSha(change.content);
+      return { status: "committed", commit, blobs };
+    },
+  };
+}

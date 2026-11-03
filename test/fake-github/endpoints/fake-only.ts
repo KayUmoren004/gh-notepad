@@ -1,25 +1,34 @@
 import { apiError, escapeHtml, json, type FakeRoute } from "../router";
-import { accessTokensFor, addRepo, addUser, findRepo, findUser, inviteCollaborator, type RepoSeed } from "../state";
+import {
+  accessTokensFor,
+  addRepo,
+  addUser,
+  commitFiles,
+  findRepo,
+  findUser,
+  inviteCollaborator,
+  readFiles,
+} from "../state";
+import { repoJson } from "./repos";
 import { userJson } from "./users";
 
-const strings = (value: unknown): value is string[] =>
-  Array.isArray(value) && value.every((item) => typeof item === "string");
+async function readObject(request: Request): Promise<Record<string, unknown>> {
+  const body: unknown = await request.json().catch(() => null);
+  return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+}
 
-function repoSeed(value: unknown): RepoSeed | null {
-  if (!value || typeof value !== "object") return null;
-  const body = value as Record<string, unknown>;
-  if (typeof body.owner !== "string" || typeof body.name !== "string") return null;
-  const files = body.files && typeof body.files === "object" ? (body.files as Record<string, unknown>) : undefined;
-  return {
-    owner: body.owner,
-    name: body.name,
-    private: typeof body.private === "boolean" ? body.private : undefined,
-    topics: strings(body.topics) ? body.topics : undefined,
-    collaborators: strings(body.collaborators) ? body.collaborators : undefined,
-    files: files && Object.values(files).every((content) => typeof content === "string")
-      ? (files as Record<string, string>)
-      : undefined,
-  };
+/** A `{ path: content }` map; with `nullable`, `null` (delete) is allowed too. */
+function fileMap(value: unknown, nullable: boolean): Record<string, string | null> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const files = value as Record<string, unknown>;
+  const valid = Object.values(files).every((content) => typeof content === "string" || (nullable && content === null));
+  return valid ? (files as Record<string, string | null>) : null;
+}
+
+/** A list of strings, `undefined` when absent, or `null` when it is something else. */
+function stringList(value: unknown): string[] | undefined | null {
+  if (value === undefined) return undefined;
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : null;
 }
 
 /**
@@ -53,11 +62,54 @@ export const fakeOnlyRoutes: FakeRoute[] = [
   {
     method: "POST",
     path: "/_fake/repos",
-    handle: async ({ request, state }) => {
-      const seed = repoSeed(await request.json().catch(() => null));
-      if (!seed) return apiError(422, "Validation Failed: owner and name are required");
-      const repo = addRepo(state, seed);
-      return json({ owner: repo.owner, name: repo.name }, { status: 201 });
+    handle: async ({ request, url, state }) => {
+      const body = await readObject(request);
+      const files = body.files === undefined ? undefined : fileMap(body.files, false);
+      const topics = stringList(body.topics);
+      const collaborators = stringList(body.collaborators);
+      if (
+        typeof body.owner !== "string" ||
+        typeof body.name !== "string" ||
+        files === null ||
+        topics === null ||
+        collaborators === null
+      ) {
+        return apiError(
+          422,
+          "Validation Failed: owner and name are required; files is { path: content }; topics and collaborators are lists of strings",
+        );
+      }
+      const repo = addRepo(state, {
+        owner: body.owner,
+        name: body.name,
+        private: body.private !== false,
+        files: files as Record<string, string> | undefined,
+        topics,
+        collaborators,
+      });
+      return json(repoJson(state, repo, url.origin), { status: 201 });
+    },
+  },
+  {
+    method: "POST",
+    path: "/_fake/repos/:owner/:repo/commits",
+    handle: async ({ request, params, state }) => {
+      const repo = findRepo(state, params.owner, params.repo);
+      if (!repo) return apiError(404, "Not Found");
+      const body = await readObject(request);
+      const files = fileMap(body.files, true);
+      if (typeof body.message !== "string" || !files) {
+        return apiError(422, "Validation Failed: message and files ({ path: content | null }) are required");
+      }
+      return json({ sha: commitFiles(state, repo, { message: body.message, files }) }, { status: 201 });
+    },
+  },
+  {
+    method: "GET",
+    path: "/_fake/repos/:owner/:repo/files",
+    handle: ({ params, state }) => {
+      const repo = findRepo(state, params.owner, params.repo);
+      return repo ? json(readFiles(repo)) : apiError(404, "Not Found");
     },
   },
   {
@@ -65,9 +117,9 @@ export const fakeOnlyRoutes: FakeRoute[] = [
     path: "/_fake/repos/:owner/:repo/invitations",
     handle: async ({ request, params, state }) => {
       const repo = findRepo(state, params.owner, params.repo);
-      const body: unknown = await request.json().catch(() => null);
-      const invitee = body && typeof body === "object" && "invitee" in body ? body.invitee : undefined;
-      if (!repo || typeof invitee !== "string") return apiError(404, "Not Found");
+      if (!repo) return apiError(404, "Not Found");
+      const { invitee } = await readObject(request);
+      if (typeof invitee !== "string") return apiError(422, "Validation Failed: invitee is required");
       // Idempotent, for retried tests: the open invitation again, or none once they collaborate.
       const invitation = inviteCollaborator(state, repo, addUser(state, { login: invitee }));
       return json({ id: invitation?.id ?? null }, { status: 201 });

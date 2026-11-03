@@ -302,16 +302,18 @@ describe("fake GitHub over HTTP: seeding notebooks and invitations", () => {
       const control = connectFakeGitHub(server.url);
       const seed = { owner: "octo-owner", name: "book-club", topics: ["gh-notepad-notebook"], files: { "README.md": "# b\n" } };
 
-      expect(await control.addRepo(seed)).toEqual({ owner: "octo-owner", name: "book-club" });
-      expect(await control.addRepo(seed)).toEqual({ owner: "octo-owner", name: "book-club" });
+      expect(await control.addRepo({ ...seed, collaborators: ["octo-friend"] })).toMatchObject({
+        full_name: "octo-owner/book-club",
+        topics: ["gh-notepad-notebook"],
+      });
+      expect(await control.addRepo({ ...seed, topics: [] })).toMatchObject({ topics: ["gh-notepad-notebook"] });
+      expect(await control.collaborators("octo-owner", "book-club")).toEqual(["octo-friend"]);
       const first = await control.invite("octo-owner", "book-club", "octo-invitee");
       const again = await control.invite("octo-owner", "book-club", "octo-invitee");
 
       expect(first.id).toEqual(expect.any(Number));
       expect(again).toEqual(first);
-      expect(server.fake.repo("octo-owner", "book-club")).toMatchObject({ topics: ["gh-notepad-notebook"] });
       expect(server.fake.invitations("octo-owner", "book-club")).toHaveLength(1);
-      expect(await control.collaborators("octo-owner", "book-club")).toEqual([]);
 
       const invitation = server.fake.invitations("octo-owner", "book-club")[0];
       const token = server.fake.issueAccessToken("octo-invitee");
@@ -320,7 +322,7 @@ describe("fake GitHub over HTTP: seeding notebooks and invitations", () => {
         headers: { authorization: `Bearer ${token}` },
       });
 
-      expect(await control.collaborators("octo-owner", "book-club")).toEqual(["octo-invitee"]);
+      expect(await control.collaborators("octo-owner", "book-club")).toEqual(["octo-friend", "octo-invitee"]);
       expect(await control.invite("octo-owner", "book-club", "octo-invitee")).toEqual({ id: null });
     } finally {
       await server.close();

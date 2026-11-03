@@ -10,8 +10,19 @@ export interface FakeGitHubControl {
   addUser: (user: UserSeed) => Promise<{ login: string; id: number }>;
   /** Every access token issued to `login`, oldest first. */
   accessTokensFor: (login: string) => Promise<string[]>;
-  /** Seeds a repository and its owner; one that exists is left as it is. */
-  addRepo: (repo: RepoSeed) => Promise<{ owner: string; name: string }>;
+  /**
+   * Seeds a repository, with an initial commit holding `files`, its `topics`
+   * and `collaborators` (idempotent: an existing one is left as it is).
+   */
+  addRepo: (repo: RepoSeed) => Promise<{ full_name: string }>;
+  /** Plays an edit made outside the app: commits `files` (`null` deletes) to the default branch. */
+  commitFiles: (
+    owner: string,
+    name: string,
+    change: { message: string; files: Record<string, string | null> },
+  ) => Promise<{ sha: string }>;
+  /** Every file on the default branch, as text, by path. */
+  files: (owner: string, name: string) => Promise<Record<string, string>>;
   /**
    * The owner of `owner/name` invites `invitee` (seeded if new). Idempotent:
    * the open invitation's id again, or `null` once they collaborate.
@@ -22,25 +33,23 @@ export interface FakeGitHubControl {
 }
 
 export function connectFakeGitHub(baseUrl: string): FakeGitHubControl {
-  async function call<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(new URL(path, baseUrl), init);
+  async function call<T>(path: string, init?: { method: "POST"; body: unknown }): Promise<T> {
+    const response = await fetch(
+      new URL(path, baseUrl),
+      init && { method: init.method, headers: { "content-type": "application/json" }, body: JSON.stringify(init.body) },
+    );
     if (!response.ok) throw new Error(`Fake GitHub ${path} answered ${response.status}: ${await response.text()}`);
     return (await response.json()) as T;
   }
-
-  const post = (body: unknown): RequestInit => ({
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const repoPath = (owner: string, name: string) =>
-    `/_fake/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+  const repoPath = (owner: string, name: string) => `/_fake/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
 
   return {
-    addUser: (user) => call("/_fake/users", post(user)),
+    addUser: (user) => call("/_fake/users", { method: "POST", body: user }),
     accessTokensFor: (login) => call(`/_fake/users/${encodeURIComponent(login)}/tokens`),
-    addRepo: (repo) => call("/_fake/repos", post(repo)),
-    invite: (owner, name, invitee) => call(`${repoPath(owner, name)}/invitations`, post({ invitee })),
+    addRepo: (repo) => call("/_fake/repos", { method: "POST", body: repo }),
+    commitFiles: (owner, name, change) => call(`${repoPath(owner, name)}/commits`, { method: "POST", body: change }),
+    files: (owner, name) => call(`${repoPath(owner, name)}/files`),
+    invite: (owner, name, invitee) => call(`${repoPath(owner, name)}/invitations`, { method: "POST", body: { invitee } }),
     collaborators: (owner, name) => call(`${repoPath(owner, name)}/collaborators`),
   };
 }

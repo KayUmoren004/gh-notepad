@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { NotesApp } from "@/components/notes/notes-app";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { getSignedInMember } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "Notes" };
 
-/** The app shell, still empty: the layout ticket fills it with the sidebar and editor. */
+/** The app shell around the notes screen; the layout ticket replaces it with the sidebar and editor layout. */
 export default async function NotesPage() {
   const member = await getSignedInMember();
   if (!member) redirect("/");
@@ -30,8 +31,8 @@ export default async function NotesPage() {
         </div>
       </header>
 
-      <main className="flex flex-1 items-center justify-center overflow-y-auto overscroll-contain px-safe pb-safe">
-        <p className="px-6 text-center text-muted-foreground">Your notes will appear here.</p>
+      <main className="flex min-h-0 flex-1 flex-col px-safe">
+        <NotesApp account={{ id: member.id, login: member.login }} />
       </main>
     </div>
   );
