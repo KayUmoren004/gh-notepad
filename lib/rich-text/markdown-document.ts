@@ -13,6 +13,31 @@ const isEmptyParagraph = (node: ProseMirrorNode) => node.type.name === "paragrap
 const keyOf = (node: ProseMirrorNode) => `${node.type.name}\u0000${node.textContent}`;
 
 /**
+ * An edited line in its original syntax. `source` and `before` are the line
+ * as written and as Tiptap writes it, alike except for one stretch (`_em_`
+ * for `*em*`, `    *` for `  -`); if the edit in `after` lies outside that
+ * stretch, the original stretch is kept around it.
+ */
+function overlay(source: string, before: string, after: string): string {
+  let prefix = 0;
+  while (prefix < source.length && prefix < before.length && source[prefix] === before[prefix]) prefix++;
+  let suffix = 0;
+  while (
+    suffix < source.length - prefix &&
+    suffix < before.length - prefix &&
+    source[source.length - 1 - suffix] === before[before.length - 1 - suffix]
+  ) {
+    suffix++;
+  }
+  const written = source.slice(prefix, source.length - suffix);
+  const head = before.slice(0, before.length - suffix);
+  const tail = before.slice(prefix);
+  if (after.startsWith(head)) return source.slice(0, source.length - suffix) + after.slice(head.length);
+  if (after.endsWith(tail)) return after.slice(0, after.length - tail.length) + written + source.slice(source.length - suffix);
+  return after;
+}
+
+/**
  * A note body as rich text mode loaded it. It remembers every top-level
  * block's original text, so serialising an edited document writes the
  * original bytes for each block the member didn't change, the original
@@ -130,9 +155,10 @@ export class MarkdownDocument {
   }
 
   /**
-   * A changed block. In place of a loaded block, the lines Tiptap's rewrite
-   * leaves alone keep their original text, as long as GitHub still shows the
-   * result the same as the full rewrite.
+   * A changed block. In place of a loaded block, Tiptap's rewrite is laid over
+   * the original text: lines it leaves alone keep their original text, and a
+   * changed line keeps its original syntax outside the edit, as long as GitHub
+   * still shows the result the same as the full rewrite.
    */
   private rewrite(node: ProseMirrorNode, position: number | null): string {
     const canonical = this.codec.toMarkdown(node);
@@ -154,7 +180,13 @@ export class MarkdownDocument {
         endBefore--;
         endAfter--;
       }
-      const patched = [...source.slice(0, start), ...after.slice(start, endAfter), ...source.slice(endBefore)].join("\n");
+      const changed = after.slice(start, endAfter);
+      const inPlace = endBefore - start === endAfter - start;
+      const patched = [
+        ...source.slice(0, start),
+        ...(inPlace ? changed.map((line, offset) => overlay(source[start + offset], before[start + offset], line)) : changed),
+        ...source.slice(endBefore),
+      ].join("\n");
       if (this.codec.rendersAlike(patched, canonical, this.context)) markdown = patched;
     }
     this.patched.set(node, { position, markdown });

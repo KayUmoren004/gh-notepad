@@ -15,9 +15,15 @@ export function corpus(group: "gfm" | "preserved"): [string, string][] {
     .map((name) => [name, readFileSync(join(directory, name), "utf8")]);
 }
 
-/** Rich text mode on a note body, headless: the editor runs without a DOM. */
+/**
+ * Rich text mode on a note body, headless: the editor runs without a DOM.
+ * Tiptap installs its plugins (history among them) when it mounts a view, so
+ * they are installed here the same way.
+ */
 export function openInRichText(markdown: string): Editor {
-  return new Editor({ extensions: richTextExtensions({ markdown }) });
+  const editor = new Editor({ extensions: richTextExtensions({ markdown }) });
+  editor.view.updateState(editor.state.reconfigure({ plugins: editor.extensionManager.plugins }));
+  return editor;
 }
 
 /**
