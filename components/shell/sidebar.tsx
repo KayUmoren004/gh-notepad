@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Hash, PanelLeftClose, Search, SquarePen, Trash2, type LucideIcon } from "lucide-react";
+import { FileText, PanelLeftClose, Search, SquarePen, Trash2, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { AccountMenu, type AccountMember } from "@/components/account/account-menu";
 import { MigrationNotice } from "@/components/notes/migration-notice";
@@ -14,6 +14,7 @@ import { modifierLabel } from "./media";
 import { pathOfNote } from "./note-route";
 import { NotebookTree } from "./notebook-tree";
 import { useSidebar } from "./sidebar-state";
+import { TagFilterNotice, TagsSection, useTagFilter } from "./tags-section";
 
 const RECENT = 5;
 
@@ -23,6 +24,8 @@ export interface SidebarProps {
   /** Opens a note. A keyboard activation (`event.detail === 0`) is `instant`: no push animation. */
   onOpen: (id: string, options: { instant: boolean }) => void;
   onCreate: () => void;
+  /** Opens the command palette; without it the Search action is disabled. */
+  onSearch?: () => void;
   className?: string;
 }
 
@@ -41,10 +44,11 @@ function parseKeys(stored: string | null): string[] {
  * and the notebook tree. On a phone it is the home screen; on desktop it
  * sits beside the editor and can be collapsed.
  */
-export function Sidebar({ member, openId, onOpen, onCreate, className }: SidebarProps) {
+export function Sidebar({ member, openId, onOpen, onCreate, onSearch, className }: SidebarProps) {
   const sidebar = useSidebar();
-  const trees = useNotebookTrees();
-  const recent = useRecentNotes(RECENT);
+  const tagFilter = useTagFilter();
+  const trees = useNotebookTrees({ tags: tagFilter.keys });
+  const recent = useRecentNotes(RECENT, { tags: tagFilter.keys });
   const open = useNote(openId ?? "");
   const scroller = useRef<HTMLElement>(null);
 
@@ -99,8 +103,7 @@ export function Sidebar({ member, openId, onOpen, onCreate, className }: Sidebar
           <SidebarAction icon={SquarePen} hint={`${hint}N`} onClick={onCreate}>
             New note
           </SidebarAction>
-          {/* TODO(#10): search opens the command palette; until that ticket lands the slot is disabled. */}
-          <SidebarAction icon={Search} hint={`${hint}K`} disabled>
+          <SidebarAction icon={Search} hint={`${hint}K`} disabled={!onSearch} onClick={onSearch}>
             Search
           </SidebarAction>
         </div>
@@ -146,6 +149,7 @@ export function Sidebar({ member, openId, onOpen, onCreate, className }: Sidebar
 
         <section aria-labelledby="sidebar-notebooks">
           <SectionLabel id="sidebar-notebooks">Notebooks</SectionLabel>
+          <TagFilterNotice filter={tagFilter} empty={empty} />
           <NotebookTree
             rows={rows}
             scroller={scroller}
@@ -153,15 +157,15 @@ export function Sidebar({ member, openId, onOpen, onCreate, className }: Sidebar
             onOpen={(id, event) => onOpen(id, { instant: event.detail === 0 })}
             onToggle={toggleFolder}
           />
-          {empty && <p className="px-2 pt-1 text-sm text-muted-foreground">No notes yet. Start one with New note.</p>}
+          {empty && tagFilter.keys.length === 0 && (
+            <p className="px-2 pt-1 text-sm text-muted-foreground">No notes yet. Start one with New note.</p>
+          )}
         </section>
       </nav>
 
       <div className="flex shrink-0 flex-col gap-px border-t border-sidebar-border px-2 py-2 pb-safe">
-        {/* TODO(#9): tags, and TODO(#12): Trash, fill these; until then they are disabled placeholders. */}
-        <SidebarAction icon={Hash} disabled>
-          Tags
-        </SidebarAction>
+        <TagsSection filter={tagFilter} />
+        {/* TODO(#12): Trash fills this; until then it is a disabled placeholder. */}
         <SidebarAction icon={Trash2} disabled>
           Trash
         </SidebarAction>
