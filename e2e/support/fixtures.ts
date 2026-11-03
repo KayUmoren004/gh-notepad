@@ -34,12 +34,21 @@ export const test = base.extend<Fixtures>({
   },
 
   signInOnAnotherDevice: async (
-    { browser, fakeGitHub, baseURL, viewport, userAgent, isMobile, hasTouch, deviceScaleFactor },
+    { browser, fakeGitHub, baseURL, viewport, userAgent, isMobile, hasTouch, deviceScaleFactor, serviceWorkers },
     use,
   ) => {
     const contexts: Awaited<ReturnType<typeof browser.newContext>>[] = [];
     await use(async (login) => {
-      const context = await browser.newContext({ baseURL, viewport, userAgent, isMobile, hasTouch, deviceScaleFactor });
+      // `browser.newContext()` takes none of the project's options, so the service worker setting is passed on too.
+      const context = await browser.newContext({
+        baseURL,
+        viewport,
+        userAgent,
+        isMobile,
+        hasTouch,
+        deviceScaleFactor,
+        serviceWorkers,
+      });
       contexts.push(context);
       const page = await context.newPage();
       await signIn(page, fakeGitHub, login);

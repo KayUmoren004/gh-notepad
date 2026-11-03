@@ -124,6 +124,14 @@
   --sidebar-accent-foreground: #e7e4df;
   --sidebar-border: #2f2d2a;
   --sidebar-ring: #77726b;
+
+  /* Syntax highlighting in code blocks: muted warm hues that sit on `--card`. */
+  --code-keyword: #e0a370;
+  --code-string: #a9c48b;
+  --code-number: #d6a5c4;
+  --code-title: #8fb5d6;
+  --code-attribute: #d8bb8b;
+  --code-comment: #7d776f;
 }
 
 @theme inline {
@@ -217,5 +225,183 @@
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
+  }
+}
+
+/* ---------------------------------------------------------------- Rich text mode */
+
+/* The editing surface: a note body shown as it will look. 16px text, so iOS never zooms into it. */
+@layer components {
+  .rich-text {
+    @apply text-base leading-7 text-foreground outline-none;
+    caret-color: var(--foreground);
+    overflow-wrap: anywhere;
+  }
+
+  .rich-text ::selection {
+    @apply bg-ring/45;
+  }
+
+  .rich-text > * + * {
+    @apply mt-3;
+  }
+
+  .rich-text :is(h1, h2, h3, h4, h5, h6) {
+    @apply font-semibold tracking-tight text-balance;
+  }
+  .rich-text h1 {
+    @apply mt-8 text-3xl leading-tight;
+  }
+  .rich-text h2 {
+    @apply mt-7 text-2xl leading-snug;
+  }
+  .rich-text h3 {
+    @apply mt-6 text-xl leading-snug;
+  }
+  .rich-text h4 {
+    @apply mt-5 text-lg;
+  }
+  .rich-text h5 {
+    @apply mt-4 text-base;
+  }
+  .rich-text h6 {
+    @apply mt-4 text-sm tracking-wide text-muted-foreground uppercase;
+  }
+  .rich-text > :first-child {
+    @apply mt-0;
+  }
+
+  .rich-text a {
+    @apply text-foreground underline decoration-muted-foreground/60 underline-offset-2;
+  }
+
+  .rich-text :not(pre) > code {
+    @apply rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.875em];
+  }
+
+  .rich-text :is(ul, ol) {
+    @apply pl-6;
+  }
+  .rich-text ul {
+    @apply list-disc;
+  }
+  .rich-text ol {
+    @apply list-decimal;
+  }
+  .rich-text li > * + * {
+    @apply mt-1;
+  }
+  .rich-text li + li {
+    @apply mt-1;
+  }
+  .rich-text li::marker {
+    @apply text-muted-foreground;
+  }
+
+  /* Task lists: a checkbox the member can tick, then the item's text. */
+  .rich-text ul[data-type="taskList"] {
+    @apply list-none pl-0.5;
+  }
+  .rich-text li[data-type="taskItem"] {
+    @apply flex items-start gap-2;
+  }
+  .rich-text li[data-type="taskItem"] > label {
+    @apply flex h-7 shrink-0 items-center select-none;
+  }
+  .rich-text li[data-type="taskItem"] > label input {
+    @apply size-4 cursor-pointer accent-primary pointer-coarse:size-5;
+  }
+  .rich-text li[data-type="taskItem"] > div {
+    @apply min-w-0 flex-1;
+  }
+  .rich-text li[data-type="taskItem"][data-checked="true"] > div {
+    @apply text-muted-foreground line-through decoration-muted-foreground/60;
+  }
+
+  .rich-text blockquote {
+    @apply border-l-2 border-input pl-4 text-foreground/90;
+  }
+
+  .rich-text hr {
+    @apply my-6 border-border;
+  }
+  .rich-text hr.ProseMirror-selectednode {
+    @apply border-ring;
+  }
+
+  .rich-text img {
+    @apply inline max-w-full rounded-md align-bottom;
+  }
+  .rich-text img.ProseMirror-selectednode {
+    @apply ring-2 ring-ring;
+  }
+
+  /* Code blocks, highlighted by lowlight's `hljs-*` classes. */
+  .rich-text pre {
+    @apply overflow-x-auto rounded-lg border bg-card px-4 py-3 font-mono text-sm leading-6;
+    tab-size: 4;
+  }
+  .rich-text pre code {
+    @apply bg-transparent p-0 text-[inherit];
+  }
+  .rich-text :is(.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-doctag, .hljs-name) {
+    color: var(--code-keyword);
+  }
+  .rich-text :is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-template-tag) {
+    color: var(--code-string);
+  }
+  .rich-text :is(.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet) {
+    color: var(--code-number);
+  }
+  .rich-text :is(.hljs-title, .hljs-section, .hljs-function, .hljs-selector-id, .hljs-selector-class) {
+    color: var(--code-title);
+  }
+  .rich-text :is(.hljs-attr, .hljs-attribute, .hljs-property, .hljs-type, .hljs-params, .hljs-variable) {
+    color: var(--code-attribute);
+  }
+  .rich-text :is(.hljs-comment, .hljs-quote, .hljs-meta, .hljs-deletion) {
+    color: var(--code-comment);
+  }
+  .rich-text .hljs-comment {
+    @apply italic;
+  }
+
+  /* Markdown rich text mode can't express, shown and edited as its source. */
+  .rich-text pre[data-markdown-source] {
+    @apply relative border-dashed bg-transparent pt-7 whitespace-pre-wrap text-muted-foreground;
+  }
+  .rich-text pre[data-markdown-source]::before {
+    @apply absolute top-1.5 left-4 font-sans text-xs text-muted-foreground/80;
+    content: "Markdown";
+  }
+
+  /* Tables scroll sideways inside their wrapper rather than widening the page. */
+  .rich-text .tableWrapper {
+    @apply overflow-x-auto overscroll-x-contain;
+  }
+  .rich-text table {
+    @apply w-full border-collapse text-sm;
+  }
+  .rich-text :is(th, td) {
+    @apply relative min-w-24 border px-3 py-1.5 text-left align-top;
+  }
+  .rich-text th {
+    @apply bg-muted/50 font-semibold;
+  }
+  .rich-text :is(th, td) > * + * {
+    @apply mt-1;
+  }
+  .rich-text .selectedCell::after {
+    @apply pointer-events-none absolute inset-0 bg-ring/20;
+    content: "";
+  }
+
+  /* The prompt in an empty block, and the `/query` being typed. */
+  .rich-text .is-empty::before {
+    @apply pointer-events-none float-left h-0 text-muted-foreground;
+    content: attr(data-placeholder);
+  }
+  .rich-text .suggestion {
+    @apply rounded-sm bg-muted;
   }
 }
