@@ -14,9 +14,13 @@ import { corpus, openInRichText, renderOnGitHub } from "./test-support";
  * original text and writes it back unless the member changed that block, and
  * the gate is that Tiptap can represent every GFM construct faithfully when a
  * block *is* rewritten: GitHub renders the rewritten document identically.
- * Tiptap passes with the fixes in this module (inline images, line-start and
- * entity escaping, autolinks, fence length); constructs it can't express are
- * kept as editable Markdown source blocks instead.
+ * Tiptap passes with the fixes in this module: blocks split where GitHub
+ * splits them (micromark, not Tiptap's lexer), inline images, line-start and
+ * minimal entity escaping, autolinks, fences longer than any fence inside,
+ * list markers and looseness kept, and soft line breaks as their own node.
+ * Constructs it can't express (HTML, definitions, footnotes, named entities,
+ * linked images, checkboxes in ordered lists) are kept as editable Markdown
+ * source blocks instead.
  */
 
 describe.each(corpus("gfm"))("GFM corpus: %s", (_name, markdown) => {
