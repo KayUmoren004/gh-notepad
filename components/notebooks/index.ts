@@ -3,9 +3,9 @@
  * invitations, and leaving.
  *
  * - `NewNotebookButton` by the sidebar's Notebooks heading opens
- *   `NewNotebookDialog`, as does the `notepad:new-notebook` window event the
- *   command palette dispatches. The dialog previews the repository the typed
- *   name becomes (`notebook-name.ts`) and creates it through the routes.
+ *   `NewNotebookDialog`, and lists the same action in the command palette
+ *   while mounted. The dialog previews the repository the typed name becomes
+ *   (`notebook-name.ts`) and creates it through the routes.
  * - `NotebookRowMenu` is the "…" on a notebook's row in the tree: a new note
  *   in that notebook, `NotebookSettingsDialog` (collaborators, invitations,
  *   inviting by GitHub username) for a shared one, and `LeaveNotebookDialog`
@@ -18,7 +18,7 @@
  */
 export { InvitationsBanner } from "./invitations-banner";
 export { LeaveNotebookDialog } from "./leave-notebook-dialog";
-export { NEW_NOTEBOOK_EVENT, NewNotebookButton, NewNotebookDialog } from "./new-notebook-dialog";
+export { NewNotebookButton, NewNotebookDialog } from "./new-notebook-dialog";
 export { checkNotebookName, notebookSlug, usernameToInvite, type NotebookNameCheck } from "./notebook-name";
 export { NotebookRowMenu } from "./notebook-row-menu";
 export { NotebookSettingsDialog } from "./notebook-settings-dialog";

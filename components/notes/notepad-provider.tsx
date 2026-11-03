@@ -5,6 +5,7 @@ import { openDeviceStore, type Account, type DeviceStore, type Note } from "@/li
 import { buildNotebookTrees, notebookName, recentNotes, type NotebookTree } from "@/lib/notebook-tree";
 import { createRemote, type Remote } from "@/lib/remote";
 import { createSyncEngine, type SyncEngine, type SyncStatus } from "@/lib/sync-engine";
+import { filterByTags, indexTags, type TagIndex } from "@/lib/tags";
 
 /** The app's client side for one signed-in member: their device store, its sync engine, and the remote both reach GitHub through. */
 export interface Notepad {
@@ -102,14 +103,32 @@ export function useNotes(): Note[] {
   );
 }
 
-/** Every notebook on the device as a tree of folders and notes: the personal notebook first (always there), then the shared ones by name. */
-export function useNotebookTrees(): NotebookTree[] {
+/** Narrows the notes a list shows: with `tags`, only the notes carrying every one of them. */
+export interface NoteListOptions {
+  tags?: readonly string[];
+}
+
+/** The tag option as a stable value, so a caller passing a fresh array each render doesn't recompute. */
+function useTagSelection(tags: readonly string[] | undefined): readonly string[] {
+  const joined = tags?.join("\u0000") ?? "";
+  return useMemo(() => (joined ? joined.split("\u0000") : []), [joined]);
+}
+
+/**
+ * Every notebook on the device as a tree of folders and notes: the personal
+ * notebook first (always there), then the shared ones by name. With `tags`,
+ * only the matching notes and the folders holding them.
+ */
+export function useNotebookTrees({ tags }: NoteListOptions = {}): NotebookTree[] {
   const { store } = useNotepad();
   const { notes, notebooks } = useSyncExternalStore(store.subscribe, store.getState, store.getState);
+  const selected = useTagSelection(tags);
   return useMemo(() => {
-    const trees = buildNotebookTrees(notes.values(), { notebooks: [store.personalNotebook, ...notebooks.keys()] });
+    const trees = buildNotebookTrees(filterByTags(notes.values(), selected), {
+      notebooks: [store.personalNotebook, ...notebooks.keys()],
+    });
     return [...trees.filter((tree) => tree.id === store.personalNotebook), ...trees.filter((tree) => tree.id !== store.personalNotebook)];
-  }, [notes, notebooks, store.personalNotebook]);
+  }, [notes, notebooks, selected, store.personalNotebook]);
 }
 
 /** Every notebook on the device: the personal notebook first, then the shared ones by name. */
@@ -152,11 +171,19 @@ export function useNotebook(id: string): NotebookSummary | undefined {
   return notebooks.find((notebook) => notebook.id === id);
 }
 
-/** The last edited notes, newest first, at most `limit`. */
-export function useRecentNotes(limit: number): Note[] {
+/** The last edited notes, newest first, at most `limit`; with `tags`, among the matching notes only. */
+export function useRecentNotes(limit: number, { tags }: NoteListOptions = {}): Note[] {
   const { store } = useNotepad();
   const { notes } = useSyncExternalStore(store.subscribe, store.getState, store.getState);
-  return useMemo(() => recentNotes(notes.values(), limit), [notes, limit]);
+  const selected = useTagSelection(tags);
+  return useMemo(() => recentNotes(filterByTags(notes.values(), selected), limit), [notes, selected, limit]);
+}
+
+/** Every tag across the device's notebooks, with how many notes carry each. */
+export function useTagIndex(): TagIndex {
+  const { store } = useNotepad();
+  const { notes } = useSyncExternalStore(store.subscribe, store.getState, store.getState);
+  return useMemo(() => indexTags(notes.values()), [notes]);
 }
 
 /** One note, re-rendering only when that note changes. */

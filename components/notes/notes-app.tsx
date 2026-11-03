@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { DESKTOP, NoteScreen, Sidebar, SidebarProvider, TopBar, useMediaQuery, useNoteRoute, useShortcuts, useSidebar, type ScreenPhase } from "@/components/shell";
 import { modifierLabel } from "@/components/shell/media";
+import { CommandPalette } from "@/components/palette";
 import { cn } from "@/lib/utils";
 import { NoteEditor } from "./note-editor";
 import { NotepadProvider, useNote, useNotepad, useSyncStatus } from "./notepad-provider";
@@ -67,7 +68,10 @@ function Shell({ member }: { member: ShellMember }) {
 
   const newNote = useCallback(() => create({ instant: true }), [create]);
   const toggleSidebar = useCallback(() => sidebar.toggle({ instant: true }), [sidebar]);
-  useShortcuts({ newNote, toggleSidebar });
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const search = useCallback(() => setPaletteOpen((open) => !open), []);
+  useShortcuts({ newNote, toggleSidebar, search });
+  const openFromPalette = useCallback((id: string) => show(id, { instant: true }), [show]);
 
   // The note last opened stays on screen while a phone's note screen slides out.
   const [lastNoteId, setLastNoteId] = useState(route.noteId);
@@ -96,6 +100,7 @@ function Shell({ member }: { member: ShellMember }) {
           openId={route.noteId}
           onOpen={show}
           onCreate={(options) => create(options)}
+          onSearch={search}
           className={cn(
             "md:transition-[translate,opacity] md:duration-(--duration-base) md:ease-out motion-reduce:md:transition-[opacity] in-data-[instant]:md:transition-none",
             sidebar.collapsed && "md:-translate-x-full md:opacity-0",
@@ -111,6 +116,8 @@ function Shell({ member }: { member: ShellMember }) {
           <NothingOpen />
         )}
       </NoteScreen>
+
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onOpenNote={openFromPalette} onNewNote={newNote} />
     </div>
   );
 }

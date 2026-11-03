@@ -1,8 +1,9 @@
 "use client";
 
-import { Plus } from "lucide-react";
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { BookPlus, Plus } from "lucide-react";
+import { useId, useState, type FormEvent } from "react";
 import { useNotepad } from "@/components/notes/notepad-provider";
+import { usePaletteAction } from "@/components/palette";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -11,21 +12,20 @@ import { RemoteError } from "@/lib/remote";
 import { cn } from "@/lib/utils";
 import { checkNotebookName } from "./notebook-name";
 
-/** The window event the command palette dispatches to open the dialog from anywhere. */
-export const NEW_NOTEBOOK_EVENT = "notepad:new-notebook";
-
 /**
  * The sidebar's "New shared notebook" action: a small button by the Notebooks
- * heading that opens the dialog, which the palette's event opens too.
+ * heading that opens the dialog, listed in the command palette too.
  */
 export function NewNotebookButton({ onCreated, className }: { onCreated?: (id: string) => void; className?: string }) {
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    const show = () => setOpen(true);
-    window.addEventListener(NEW_NOTEBOOK_EVENT, show);
-    return () => window.removeEventListener(NEW_NOTEBOOK_EVENT, show);
-  }, []);
+  usePaletteAction({
+    id: "new-shared-notebook",
+    label: "New shared notebook",
+    keywords: "create share collaborate repository",
+    icon: BookPlus,
+    run: () => setOpen(true),
+  });
 
   return (
     <>
