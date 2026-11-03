@@ -36,6 +36,12 @@ export interface SyncEngineOptions {
 
 export interface SyncEngine {
   getStatus: () => SyncStatus;
+  /**
+   * The v1 conversion this device committed since it opened, if any, so the
+   * member can be told about files it left out. Changes are announced through
+   * `subscribe`, with the sync that made them.
+   */
+  getMigrationReport: () => MigrationReport | null;
   subscribe: (listener: () => void) => () => void;
   /**
    * Syncs now, or right after the sync already running (at most one follow-up
@@ -259,6 +265,7 @@ export function createSyncEngine({
 
   return {
     getStatus: () => status,
+    getMigrationReport: () => migrated,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

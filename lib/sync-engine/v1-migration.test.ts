@@ -155,4 +155,57 @@ describe("migrating v1 notes", () => {
     expect(reopened.store.getState().notes.size).toBe(3);
     expect(reopened.store.note(groceries)).toMatchObject({ body: "- Milk\n- Bread\n- Eggs\n", synced: true });
   });
+
+  it("converts once when two devices convert at the same time", async () => {
+    const world = createWorld();
+    world.github.addRepo({ owner: member, name: notebook, files: v1Notebook });
+    const laptop = await world.signIn(member);
+    const phone = await world.signIn(member);
+
+    const phoneCommit = world.holdGitHub((request) => request.method === "PATCH" && request.url.includes("/git/refs/"));
+    const phoneSync = phone.sync();
+    await phoneCommit.reached;
+    await laptop.sync();
+    phoneCommit.release();
+    await phoneSync;
+
+    expect(world.github.files(member, notebook)).toEqual(v2Notebook);
+    expect(world.github.commits(member, notebook).map((entry) => entry.message)).toEqual([
+      "Convert v1 notes to Markdown",
+      "Initial commit",
+    ]);
+    for (const device of [laptop, phone]) {
+      expect(device.store.getState().notes.size).toBe(3);
+      expect(device.store.note(roadmap)).toMatchObject({ path: "Work/Roadmap.md", synced: true });
+    }
+  });
+
+  it("converts what it can and tells the member which files it couldn't read", async () => {
+    const world = createWorld();
+    world.github.addRepo({
+      owner: member,
+      name: notebook,
+      files: { ...v1Notebook, "notes/broken.json": '{ "title": "Half a no' },
+    });
+    const laptop = await world.signIn(member);
+    expect(laptop.engine.getMigrationReport()).toBeNull();
+
+    await laptop.sync();
+
+    expect(world.github.files(member, notebook)).toEqual(v2Notebook);
+    const [latest] = world.github.commits(member, notebook);
+    expect(latest.message).toBe(
+      [
+        "Convert v1 notes to Markdown",
+        "",
+        "Left out 1 file that couldn't be read; this notebook's history keeps them:",
+        "- notes/broken.json: isn't valid JSON",
+      ].join("\n"),
+    );
+    expect(laptop.engine.getMigrationReport()).toEqual({
+      notebook: `${member}/${notebook}`,
+      commit: latest.sha,
+      skipped: [{ path: "notes/broken.json", reason: "isn't valid JSON" }],
+    });
+  });
 });

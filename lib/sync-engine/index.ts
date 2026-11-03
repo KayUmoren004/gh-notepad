@@ -18,3 +18,4 @@ export {
   type SyncStatus,
   type Timers,
 } from "./engine";
+export type { MigrationReport, SkippedFile } from "./migration";
