@@ -10,11 +10,13 @@ import {
   type NotebookLocation,
   type RepositoryName,
 } from "@/lib/github-gateway";
+import { ATTACHMENTS_DIR, attachmentContentType, imageProblem, isAttachmentPath } from "@/lib/attachments";
 import { isSafePath } from "@/lib/notebook-format";
 import {
   BLOBS_PER_REQUEST,
   type ApiErrorBody,
   type ApiErrorCode,
+  type AttachmentBlobResponse,
   type BlobsResponse,
   type CommitResponse,
   type FileChange,
@@ -34,6 +36,8 @@ import {
  *   GET  /api/notebooks/:owner/:repo/files           ?commit=         every file at a commit
  *   POST /api/notebooks/:owner/:repo/blobs           { shas }         text of blobs
  *   POST /api/notebooks/:owner/:repo/commits         { branch, base, message, changes }
+ *   POST /api/notebooks/:owner/:repo/attachments     <image bytes>    stored as a blob, for a commit to name
+ *   GET  /api/notebooks/:owner/:repo/attachments/:name ?branch=&sha=  the attachment's bytes, cacheable
  */
 export interface NotebookApi {
   handle: (request: NextRequest) => Promise<Response>;
@@ -113,6 +117,10 @@ function readChanges(value: unknown): FileChange[] {
     if (seen.has(path)) throw invalid(`Changed twice: ${path}`);
     seen.add(path);
     if (change.delete === true) return { path, delete: true };
+    if ("sha" in change) {
+      if (typeof change.sha !== "string" || !SHA.test(change.sha)) throw invalid(`Invalid blob for ${path}`);
+      return { path, sha: change.sha };
+    }
     if (typeof change.content !== "string" || change.content.length > MAX_FILE_CHARS) {
       throw invalid(`Missing or oversized content for ${path}`);
     }
@@ -169,9 +177,27 @@ export function createNotebookApi({ appUrl, readSession, github }: NotebookApiOp
       return reply(notebook);
     }
 
+    if (segments.length === 4 && segments[2] === ATTACHMENTS_DIR && request.method === "GET") {
+      const { session, gitHub } = await signedIn(request);
+      return serveAttachment(request, gitHub, branchOf(session, segments[0], segments[1], url.searchParams.get("branch")), segments[3]);
+    }
+
     if (segments.length !== 3) throw new ApiFailure(404, "not_found", "No such route");
     const [owner, repo, action] = segments;
     const { session, gitHub } = await signedIn(request);
+
+    if (action === ATTACHMENTS_DIR && request.method === "POST") {
+      const notebook = notebookOf(session, owner, repo);
+      const type = request.headers.get("content-type")?.split(";")[0].trim() ?? "";
+      const declared = Number(request.headers.get("content-length"));
+      const problem = imageProblem({ type, size: Number.isFinite(declared) && declared > 0 ? declared : 1 });
+      if (problem) throw invalid(problem);
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      const late = imageProblem({ type, size: bytes.length });
+      if (late) throw invalid(late);
+      const stored: AttachmentBlobResponse = { sha: await gitHub.storeBlob(notebook, bytes) };
+      return reply(stored, 201);
+    }
 
     if (action === "head" && request.method === "GET") {
       const notebook = branchOf(session, owner, repo, url.searchParams.get("branch"));
@@ -215,6 +241,43 @@ export function createNotebookApi({ appUrl, readSession, github }: NotebookApiOp
     }
 
     throw new ApiFailure(404, "not_found", "No such route");
+  }
+
+  /**
+   * An attachment's bytes, for the member's own browser cache: for good when
+   * the request names the blob (a blob never changes), otherwise for an hour
+   * and then revalidated by ETag. Sandboxed and never sniffed, so an SVG opened
+   * on its own can't run scripts against the app.
+   */
+  async function serveAttachment(
+    request: NextRequest,
+    gitHub: MemberGitHub,
+    notebook: NotebookLocation,
+    name: string,
+  ): Promise<Response> {
+    const path = `${ATTACHMENTS_DIR}/${name}`;
+    if (!isAttachmentPath(path)) throw invalid("Not an attachment");
+    const wanted = request.nextUrl.searchParams.get("sha");
+    if (wanted !== null && !SHA.test(wanted)) throw invalid("Invalid blob");
+
+    const blob = await gitHub.readBlob(notebook, path, wanted);
+    if (!blob) throw new ApiFailure(404, "not_found", "The notebook has no such attachment");
+    const etag = `"${blob.sha}"`;
+    const headers = {
+      etag,
+      "cache-control": wanted ? "private, max-age=31536000, immutable" : "private, max-age=3600",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": "sandbox",
+    };
+    if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers });
+    return new Response(new Uint8Array(blob.bytes), {
+      headers: {
+        ...headers,
+        "content-type": attachmentContentType(path),
+        "content-length": String(blob.bytes.length),
+        "content-disposition": `inline; filename="${name.replace(/[^A-Za-z0-9._-]/g, "_")}"`,
+      },
+    });
   }
 
   return {

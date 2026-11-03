@@ -39,7 +39,7 @@ Notebooks and Git data:
 
 - `addRepo({ owner, name, private?, files?, topics?, collaborators? })` seeds a repository (private by default) with an initial commit holding `files`, or empty without them; its `collaborators` have already accepted.
 - `commitFiles(owner, name, { message, files })` plays an edit made outside the app (on github.com, another editor): one commit on the default branch, where a `null` content deletes the path.
-- `files(owner, name)` reads every file on the default branch; `commits(owner, name)` lists its history, newest first, with the paths each commit `added`, `modified` or `removed`; `repo(owner, name)` returns the repository record.
+- `files(owner, name)` reads every file on the default branch as text, and `fileBytes(owner, name, path)` one file as bytes (an attachment); `commits(owner, name)` lists its history, newest first, with the paths each commit `added`, `modified` or `removed`; `repo(owner, name)` returns the repository record.
 - `invite(owner, name, invitee)` plays the owner inviting someone to collaborate; `collaborators(owner, name)` and `invitations(owner, name)` show who has access and who is still invited.
 - `requests()` lists every GitHub request answered (`{ method, path, status }`, control routes aside), e.g. to show an unchanged notebook costs one `304`, or that a route refused a bad name before asking GitHub.
 - `issueAccessToken(login)` hands out a token without the OAuth dance, for tests that call the REST API directly; `revokeAccessTokens(login)` plays the member revoking the app on github.com, after which every REST request with one of their tokens answers 401 `Bad credentials`.
@@ -94,7 +94,8 @@ To develop against the fake instead of a real OAuth App, run `npm run fake-githu
 | `GET /_fake/users/:login/tokens` | Access tokens issued to `login`. |
 | `POST /_fake/repos` | Seeds a repository: `{ owner, name, private?, files?, topics?, collaborators? }` (idempotent). |
 | `POST /_fake/repos/:owner/:repo/commits` | An outside edit: `{ message, files }`, `null` deleting a path. |
-| `GET /_fake/repos/:owner/:repo/files` | Every file on the default branch, by path. |
+| `GET /_fake/repos/:owner/:repo/files` | Every file on the default branch, as text, by path. |
+| `GET /_fake/repos/:owner/:repo/file/*` | One file on the default branch as bytes (`application/octet-stream`), for attachments; 404 if there is none. |
 | `POST /_fake/repos/:owner/:repo/invitations` | The owner invites `{ invitee }`: `{ id }` of the open invitation, or `{ id: null }` once they collaborate. |
 | `GET /_fake/repos/:owner/:repo/collaborators` | Collaborators' logins, the owner aside. |
 | `GET /_fake/avatars/:login` | The SVG that `avatar_url` points at, so runs never reach the internet. |

@@ -20,6 +20,9 @@
  * - Offline and a signed-out session are states, not errors: sync resumes on
  *   reconnect, or once the member signs in again; other failures are retried
  *   with back-off. Device data is never touched by any of this.
+ * - Attachments inserted on the device are stored on GitHub as blobs first,
+ *   then named in the same commit as the notes that embed them
+ *   (`attachments.ts`).
  */
 export {
   createSyncEngine,

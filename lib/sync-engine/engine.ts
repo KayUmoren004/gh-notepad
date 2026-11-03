@@ -1,6 +1,7 @@
 import type { DeviceStore } from "@/lib/device-store";
 import { fallbackNoteId, isNotePath, isV1Path, titleOfPath } from "@/lib/notebook-format";
 import { RemoteError, type NotebookRef, type Remote, type RemoteFile } from "@/lib/remote";
+import { attachmentUnits, stageAttachments, withAttachments } from "./attachments";
 import { batchMessage, planBatches } from "./batches";
 import { migrationUnits, planMigration, type MigrationReport, type PendingMigration } from "./migration";
 import { planPush } from "./push";
@@ -255,13 +256,16 @@ export function createSyncEngine({
     const migration = migrations.get(id);
     let base = migration?.base ?? store.sync.notebook(id)?.head;
     const dirty = store.sync.records(id).filter((record) => record.dirty);
-    if (dirty.length === 0 && !migration) return "clean";
+    // Attachments inserted on this device go into the same commit as the notes that embed them (ADR 0003).
+    const attachments = await stageAttachments(store, remote, id, ref);
+    if (dirty.length === 0 && !migration && attachments.paths.length === 0) return "clean";
     if (!base) throw new Error("The notebook has no commits yet");
 
     const plan = planPush(dirty);
-    const units = migration ? migrationUnits(migration, plan.units) : plan.units;
+    let units = attachmentUnits(plan.units, attachments);
+    if (migration) units = migrationUnits(migration, units);
     const batches = planBatches(units, maxChangesPerCommit);
-    const message = migration?.message ?? plan.message;
+    const message = withAttachments(migration?.message ?? plan.message, dirty.length, attachments);
     for (const [index, batch] of batches.entries()) {
       if (batches.length > 1) setStatus({ state: "syncing", progress: { done: index, total: batches.length } });
       const result = await remote.commit(ref, {
@@ -274,6 +278,8 @@ export function createSyncEngine({
       // Until the whole conversion is committed its head counts as unseen, as after the pull that planned it:
       // a sync that resumes part-way pulls what landed and plans the rest.
       const landed = migration && index < batches.length - 1 ? migration.base : result.commit;
+      const paths = new Set(batch.changes.map((change) => change.path));
+      store.sync.applyAttachmentPush(id, attachments.paths.filter((path) => paths.has(path)));
       store.sync.applyPush(
         id,
         landed,

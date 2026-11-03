@@ -148,18 +148,21 @@ export function createWorld({ members = ["octo-member"] }: { members?: string[] 
       return open(jar, sameBrowserAs?.indexedDB ?? new IDBFactory(), options);
     },
 
-    callApi: (path, { method = "GET", body, headers = {}, as } = {}) =>
-      api.handle(
+    callApi: (path, { method = "GET", body, headers = {}, as } = {}) => {
+      // Bytes (an attachment) go as they are, under the caller's content type; anything else is JSON.
+      const raw = body instanceof Uint8Array || body instanceof Blob;
+      return api.handle(
         new NextRequest(new URL(path, appUrl), {
           method,
           headers: {
             ...(as ? { cookie: as.cookies.header() } : {}),
-            ...(body === undefined ? {} : { "content-type": "application/json" }),
+            ...(body === undefined || raw ? {} : { "content-type": "application/json" }),
             ...headers,
           },
-          body: body === undefined ? undefined : JSON.stringify(body),
+          body: body === undefined ? undefined : raw ? (body as BodyInit) : JSON.stringify(body),
         }),
-      ),
+      );
+    },
 
     holdGitHub: (matches) => {
       let reached!: () => void;

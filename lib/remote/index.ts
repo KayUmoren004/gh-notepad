@@ -14,6 +14,7 @@ export {
 export type {
   ApiErrorBody,
   ApiErrorCode,
+  AttachmentBlobResponse,
   BlobsRequest,
   BlobsResponse,
   CommitRequest,

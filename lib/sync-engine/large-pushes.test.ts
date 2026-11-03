@@ -107,6 +107,38 @@ describe("a push with more changes than one commit can carry", () => {
     ]);
   });
 
+  it("keeps a note and the attachments it embeds in the same commit", async () => {
+    const world = createWorld();
+    const laptop = await world.signIn(member, { maxChangesPerCommit: 3 });
+    await laptop.sync();
+    const before = world.github.commits(member, notebook).length;
+    const png = () => new Blob([Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff])], { type: "image/png" });
+    for (const title of ["Alpha", "Beta", "Gamma"]) {
+      const id = laptop.store.createNote();
+      laptop.store.rename(id, title);
+      const link = laptop.store.addAttachment(laptop.store.personalNotebook, { type: "image/png", bytes: png() });
+      laptop.store.editBody(id, `![](${link})\n`);
+    }
+
+    await laptop.sync();
+
+    const commits = world.github.commits(member, notebook).slice(0, -before);
+    expect(commits.map((commit) => commit.message)).toEqual([
+      "Update 3 notes and add 3 attachments (3 of 3)",
+      "Update 3 notes and add 3 attachments (2 of 3)",
+      "Update 3 notes and add 3 attachments (1 of 3)",
+    ]);
+    const files = world.github.files(member, notebook);
+    for (const commit of commits) {
+      const [note, attachment] = commit.files.map((file) => file.path).sort();
+      expect(note).toMatch(/^(Alpha|Beta|Gamma)\.md$/);
+      expect(attachment).toMatch(/^attachments\/.+\.png$/);
+      expect(readNote(files[note]).body).toBe(`![](/${attachment})\n`);
+    }
+    expect(laptop.store.sync.pendingAttachments(laptop.store.personalNotebook)).toEqual([]);
+    expect([...laptop.store.getState().notes.values()].filter((note) => !note.synced)).toEqual([]);
+  });
+
   it("a failure after the first commit leaves it in place, and the next sync resumes without duplicating or losing changes", async () => {
     const world = createWorld();
     world.github.addRepo({ owner: member, name: notebook, files: { "README.md": "# my-notes\n", ...noteFiles(5) } });

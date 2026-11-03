@@ -25,7 +25,14 @@ export interface NotebookFile {
   sha: string;
 }
 
-export type FileChange = { path: string; content: string } | { path: string; delete: true };
+/** Text goes inline in the tree; a binary file is a blob stored first and named by `sha`. */
+export type FileChange = { path: string; content: string } | { path: string; sha: string } | { path: string; delete: true };
+
+/** An attachment's bytes as the notebook holds them. */
+export interface NotebookBlob {
+  sha: string;
+  bytes: Buffer;
+}
 
 export type CommitOutcome =
   /** `blobs` holds the blob SHA of every file written, by path. */
@@ -55,6 +62,13 @@ export interface MemberGitHub {
     notebook: NotebookLocation,
     commit: { base: string; message: string; changes: readonly FileChange[] },
   ) => Promise<CommitOutcome>;
+  /** Stores bytes as a blob in the notebook's repository, to name in a later commit; returns its SHA. */
+  storeBlob: (notebook: RepositoryName, bytes: Uint8Array) => Promise<string>;
+  /**
+   * The file at `path` on the branch, as bytes, or `null` if the branch has
+   * none. With the blob `sha` the branch isn't consulted: a blob never changes.
+   */
+  readBlob: (notebook: NotebookLocation, path: string, sha: string | null) => Promise<NotebookBlob | null>;
 }
 
 /** Git's blob SHA for UTF-8 text, so callers can recognise their own content in later listings. */
@@ -170,7 +184,9 @@ export function memberGitHub(api: ApiCall, login: string): MemberGitHub {
               tree: changes.map((change) =>
                 "delete" in change
                   ? { path: change.path, mode: "100644", type: "blob", sha: null }
-                  : { path: change.path, mode: "100644", type: "blob", content: change.content },
+                  : "sha" in change
+                    ? { path: change.path, mode: "100644", type: "blob", sha: change.sha }
+                    : { path: change.path, mode: "100644", type: "blob", content: change.content },
               ),
             },
           })
@@ -198,8 +214,46 @@ export function memberGitHub(api: ApiCall, login: string): MemberGitHub {
       }
 
       const blobs: Record<string, string> = {};
-      for (const change of changes) if (!("delete" in change)) blobs[change.path] = gitBlobSha(change.content);
+      for (const change of changes) {
+        if ("delete" in change) continue;
+        blobs[change.path] = "sha" in change ? change.sha : gitBlobSha(change.content);
+      }
       return { status: "committed", commit, blobs };
+    },
+
+    storeBlob: async (notebook, bytes) => {
+      const response = await api(`${repoPath(notebook)}/git/blobs`, {
+        method: "POST",
+        body: { content: Buffer.from(bytes).toString("base64"), encoding: "base64" },
+      });
+      const sha = text(record(await response.json()).sha);
+      if (!sha) throw new GitHubError("Unexpected blob response", 502);
+      return sha;
+    },
+
+    readBlob: async (notebook, path, sha) => {
+      let blobSha = sha;
+      if (!blobSha) {
+        // The tree endpoint takes a branch name as well as a tree SHA.
+        const body = await getJson(`${repoPath(notebook)}/git/trees/${branchPath(notebook.branch)}?recursive=1`);
+        if (body.truncated === true) {
+          throw new GitHubError("This notebook has more files than GitHub lists in one tree", 507);
+        }
+        const entries = Array.isArray(body.tree) ? body.tree.map(record) : [];
+        blobSha = text(entries.find((entry) => entry.type === "blob" && entry.path === path)?.sha) ?? null;
+        if (!blobSha) return null;
+      }
+      let body: Record<string, unknown>;
+      try {
+        body = await getJson(`${repoPath(notebook)}/git/blobs/${segment(blobSha)}`);
+      } catch (error) {
+        if (error instanceof GitHubError && error.status === 404) return null;
+        throw error;
+      }
+      const content = typeof body.content === "string" ? body.content : "";
+      const bytes =
+        body.encoding === "base64" ? Buffer.from(content.replace(/\s/g, ""), "base64") : Buffer.from(content, "utf8");
+      return { sha: blobSha, bytes };
     },
   };
 }

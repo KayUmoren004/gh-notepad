@@ -4,6 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { RichTextMode, type RichTextModeHandle } from "@/components/rich-text-mode";
 import { Button } from "@/components/ui/button";
+import { useNoteImages } from "./note-images";
 import { useNote, useNotepad } from "./notepad-provider";
 import { SyncIndicator } from "./sync-indicator";
 
@@ -30,6 +31,7 @@ export function NoteEditor({
   const body = useRef<RichTextModeHandle>(null);
   // What the member is typing into the title: the stored title is sanitised, and mustn't fight the keyboard.
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const images = useNoteImages(note);
 
   useEffect(() => {
     if (!focusTitle) return;
@@ -73,12 +75,14 @@ export function NoteEditor({
             autoComplete="off"
             className="w-full min-w-0 bg-transparent text-3xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground"
           />
+          {images.element}
           <RichTextMode
             key={noteId}
             ref={body}
             label="Note text"
             value={note.body}
             onChange={(text) => store.editBody(noteId, text)}
+            {...images.editorProps}
           />
         </div>
       </div>

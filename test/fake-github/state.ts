@@ -325,6 +325,14 @@ export function readFiles(repo: FakeRepo, branch = repo.defaultBranch): Record<s
   return files;
 }
 
+/** One file on a branch, as bytes, or `undefined` when the branch has none. */
+export function readFileBytes(repo: FakeRepo, path: string, branch = repo.defaultBranch): Buffer | undefined {
+  const head = branchHead(repo, branch);
+  const tree = head ? getObject(repo.objects, head, "commit")?.tree : undefined;
+  const sha = tree ? flattenTree(repo.objects, tree).get(path)?.sha : undefined;
+  return sha ? getObject(repo.objects, sha, "blob")?.content : undefined;
+}
+
 export interface FakeCommitSummary {
   sha: string;
   message: string;
