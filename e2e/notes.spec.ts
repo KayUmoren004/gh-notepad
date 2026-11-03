@@ -53,10 +53,16 @@ test("an edit on one device shows up on the other without a reload", async ({
   const title = `Shared thought ${testInfo.project.name} ${Date.now()}`;
   await signInAs(members.allowed);
   await page.getByRole("button", { name: "New note" }).click();
-  await page.keyboard.type(title);
+  const titleField = page.getByRole("textbox", { name: "Title" });
+  await expect(titleField).toBeFocused();
+  // Filled rather than typed over the selected placeholder: a pull from a test running alongside
+  // may re-title the new note meanwhile, which would drop the selection.
+  await titleField.fill(title);
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("textbox", { name: "Note text" })).toBeFocused();
+  // Typed straight after Enter, without waiting for the body to be focused: a person doesn't wait either,
+  // and the first letter must land in the body, not stay behind in the title.
   await page.keyboard.type("First draft");
+  await expect(page.getByRole("textbox", { name: "Note text" })).toHaveText("First draft");
   await expect(page.getByRole("status")).toHaveText("Synced", { timeout: 20_000 });
 
   const other = await signInOnAnotherDevice(members.allowed);

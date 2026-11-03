@@ -32,10 +32,9 @@ async function appendTo(page: Page, text: string, suffix: string) {
   await page.keyboard.type(suffix);
 }
 
-/** On a phone the tree is behind the open note, whose back button leads to it; on a desktop it is beside it. */
-async function showList(page: Page) {
-  const back = page.getByRole("button", { name: /^Back to / });
-  if (await back.isVisible()) await back.click();
+/** On a phone the list is behind the open note, and its "Notes" button leads back; on a desktop it is beside it. */
+async function showList(page: Page, isMobile: boolean) {
+  if (isMobile) await page.getByRole("button", { name: "Notes", exact: true }).click();
 }
 
 /** Playwright's offline mode cuts the network; the browser's own `online` event follows a reconnect. */
@@ -88,6 +87,7 @@ test("edits to the same line on two devices keep each device's own text, with th
   signInAs,
   signInOnAnotherDevice,
   fakeGitHub,
+  isMobile,
 }, testInfo) => {
   const title = `Clash ${testInfo.project.name} ${Date.now()}`;
   await signInAs(members.allowed);
@@ -111,7 +111,7 @@ test("edits to the same line on two devices keep each device's own text, with th
   await expect(other.getByRole("textbox", { name: "Note text" })).not.toContainText("from the laptop");
 
   // The notice names the note and opens the conflict copy, which holds this device's version.
-  await showList(other);
+  await showList(other, isMobile);
   const notice = other.getByRole("alert", { name: "1 note couldn't be merged" });
   await expect(notice).toBeVisible();
   await expect(notice).toContainText(title);
@@ -130,7 +130,7 @@ test("edits to the same line on two devices keep each device's own text, with th
   await page.bringToFront();
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(page.getByRole("textbox", { name: "Note text" })).toContainText("Alpha from the phone", synced);
-  await showList(page);
+  await showList(page, isMobile);
   await expect(page.getByRole("button", { name: `${title} (conflict copy)` })).toBeVisible();
 });
 
@@ -139,6 +139,7 @@ test("an expired session asks the member to sign in again, keeps their writing, 
   context,
   signInAs,
   fakeGitHub,
+  isMobile,
 }, testInfo) => {
   const title = `Expired ${testInfo.project.name} ${Date.now()}`;
   await signInAs(members.allowed);
@@ -148,14 +149,14 @@ test("an expired session asks the member to sign in again, keeps their writing, 
   await context.clearCookies();
   await appendTo(page, "Before the session ended", ", and after");
   await expect(page.getByRole("status")).toHaveText("Saved · Sign in to sync", synced);
-  await showList(page);
+  await showList(page, isMobile);
   const prompt = page.getByRole("alert", { name: "Sign in again to sync" });
   await expect(prompt).toBeVisible();
 
   // Writing carries on meanwhile; nothing on the device is touched.
   await page.getByRole("button", { name: title }).click();
   await expect(page.getByRole("textbox", { name: "Note text" })).toContainText("Before the session ended, and after");
-  await showList(page);
+  await showList(page, isMobile);
 
   await prompt.getByRole("link", { name: "Sign in again" }).click();
   await page.getByRole("button", { name: `Authorize as ${members.allowed}` }).click();
@@ -177,11 +178,12 @@ test.describe("opening the app offline", () => {
     context,
     signInAs,
     fakeGitHub,
+    isMobile,
   }, testInfo) => {
     const title = `Offline ${testInfo.project.name} ${Date.now()}`;
     await signInAs(members.allowed);
     await writeNote(page, title, "Written online");
-    await showList(page);
+    await showList(page, isMobile);
     await waitUntilAvailableOffline(page);
 
     await context.setOffline(true);
@@ -192,7 +194,7 @@ test.describe("opening the app offline", () => {
     await expect(page.getByRole("textbox", { name: "Note text" })).toContainText("Written online");
     await appendTo(page, "Written online", ", edited offline");
     await expect(page.getByRole("status")).toHaveText("Saved · Offline", synced);
-    await showList(page);
+    await showList(page, isMobile);
     await expect(page.getByText("Offline · syncs when you're back online")).toBeVisible();
 
     await reconnect(page);

@@ -22,7 +22,7 @@ async function waitUntilSynced(page: Page) {
 
 /** On a phone the open note covers the home screen, where the account controls are; its back button leads there. */
 async function showHome(page: Page) {
-  const back = page.getByRole("button", { name: /^Back to / });
+  const back = page.getByRole("button", { name: "Notes", exact: true });
   if (await back.isVisible()) await back.click();
 }
 
@@ -132,7 +132,8 @@ test("removing with unsynced changes warns first, naming the notes that would lo
   // GitHub is out of reach: the notes are saved on the device and nowhere else.
   await page.route(NOTEBOOK_ROUTES, (route) => route.abort());
   await createNote(page, titles[0], "Only here");
-  await showHome(page);
+  // On a phone the open note covers the list, and its "Notes" button leads back.
+  if (isMobile) await page.getByRole("button", { name: "Notes", exact: true }).click();
   await createNote(page, titles[1], "Also only here");
   await expect(page.getByRole("status")).toHaveText(/^Saved/);
 
