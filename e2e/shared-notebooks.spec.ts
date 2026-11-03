@@ -111,7 +111,7 @@ test("the owner creates a notebook and invites a member, who accepts and writes 
   await dialog.getByRole("button", { name: "Create notebook" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(notebookRow(page, name)).toBeVisible(synced);
-  expect(await fakeGitHub.files(members.owner, name)).toHaveProperty("README.md");
+  expect(await fakeGitHub.files(members.owner, name)).toHaveProperty(["README.md"]);
 
   // Inviting, by GitHub username.
   await optionsFor(page, name).click();
