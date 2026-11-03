@@ -17,8 +17,19 @@ export interface RemoteFile {
   sha: string;
 }
 
-/** One file written or deleted by a commit. */
-export type FileChange = { path: string; content: string } | { path: string; delete: true };
+/**
+ * One file written or deleted by a commit. Text goes inline; binary files
+ * (attachments) are stored as blobs first and named by `sha`.
+ */
+export type FileChange =
+  | { path: string; content: string }
+  | { path: string; sha: string }
+  | { path: string; delete: true };
+
+/** The blob GitHub stored an attachment's bytes under, ready to name in a commit. */
+export interface AttachmentBlobResponse {
+  sha: string;
+}
 
 export interface HeadResponse {
   commit: string;

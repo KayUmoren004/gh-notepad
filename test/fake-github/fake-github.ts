@@ -19,6 +19,7 @@ import {
   invitationsTo,
   inviteCollaborator,
   issueAccessToken,
+  readFileBytes,
   readFiles,
   type FakeCommitSummary,
   type FakeInvitation,
@@ -88,6 +89,8 @@ export interface FakeGitHub {
   commitFiles: (owner: string, name: string, change: { message: string; files: Record<string, string | null> }) => string;
   /** Every file on the default branch, as text, by path. */
   files: (owner: string, name: string) => Record<string, string>;
+  /** One file on the default branch as bytes (an attachment), or `undefined` if there is none. */
+  fileBytes: (owner: string, name: string, path: string) => Buffer | undefined;
   /** The default branch's history, newest first, with the paths each commit changed. */
   commits: (owner: string, name: string) => FakeCommitSummary[];
   /** Every GitHub request answered so far (control routes under `/_fake/` aside), oldest first. */
@@ -119,6 +122,7 @@ export function createFakeGitHub(options: FakeGitHubOptions = {}): FakeGitHub {
     repo: (owner, name) => findRepo(state, owner, name),
     commitFiles: (owner, name, change) => commitFiles(state, requireRepo(state, owner, name), change),
     files: (owner, name) => readFiles(requireRepo(state, owner, name)),
+    fileBytes: (owner, name, path) => readFileBytes(requireRepo(state, owner, name), path),
     commits: (owner, name) => commitLog(requireRepo(state, owner, name)),
     requests: () => [...state.requests],
     invite: (owner, name, invitee) => {

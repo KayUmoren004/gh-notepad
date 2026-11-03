@@ -2,6 +2,7 @@ import {
   BLOBS_PER_REQUEST,
   routes,
   type ApiErrorBody,
+  type AttachmentBlobResponse,
   type BlobsResponse,
   type CommitResponse,
   type FileChange,
@@ -51,6 +52,8 @@ export interface Remote {
     notebook: NotebookRef,
     commit: { base: string; message: string; changes: FileChange[] },
   ) => Promise<CommitResult>;
+  /** Stores an attachment's bytes on GitHub as a blob, to name in a later commit; returns its SHA. */
+  storeAttachment: (notebook: NotebookRef, attachment: { type: string; bytes: Blob }) => Promise<string>;
 }
 
 export interface RemoteOptions {
@@ -60,13 +63,20 @@ export interface RemoteOptions {
 }
 
 export function createRemote({ baseUrl = "", fetch: send = (...args) => fetch(...args) }: RemoteOptions = {}): Remote {
-  async function call<T>(path: string, init: { method?: "GET" | "POST"; body?: unknown } = {}): Promise<T> {
+  async function call<T>(
+    path: string,
+    init: { method?: "GET" | "POST"; body?: unknown; bytes?: { type: string; blob: Blob } } = {},
+  ): Promise<T> {
     let response: Response;
     try {
       response = await send(`${baseUrl}${path}`, {
         method: init.method ?? "GET",
-        headers: init.body === undefined ? {} : { "content-type": "application/json" },
-        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+        headers: init.bytes
+          ? { "content-type": init.bytes.type }
+          : init.body === undefined
+            ? {}
+            : { "content-type": "application/json" },
+        body: init.bytes ? init.bytes.blob : init.body === undefined ? undefined : JSON.stringify(init.body),
         credentials: "same-origin",
         cache: "no-store",
       });
@@ -118,6 +128,14 @@ export function createRemote({ baseUrl = "", fetch: send = (...args) => fetch(..
         throw error;
       }
     },
+
+    storeAttachment: async (notebook, { type, bytes }) =>
+      (
+        await call<AttachmentBlobResponse>(`${routes.notebook(notebook)}/attachments`, {
+          method: "POST",
+          bytes: { type, blob: bytes },
+        })
+      ).sha,
   };
 }
 

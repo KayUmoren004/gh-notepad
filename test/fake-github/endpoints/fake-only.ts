@@ -7,6 +7,7 @@ import {
   findRepo,
   findUser,
   inviteCollaborator,
+  readFileBytes,
   readFiles,
 } from "../state";
 import { repoJson } from "./repos";
@@ -110,6 +111,16 @@ export const fakeOnlyRoutes: FakeRoute[] = [
     handle: ({ params, state }) => {
       const repo = findRepo(state, params.owner, params.repo);
       return repo ? json(readFiles(repo)) : apiError(404, "Not Found");
+    },
+  },
+  {
+    method: "GET",
+    path: "/_fake/repos/:owner/:repo/file/*",
+    handle: ({ params, state }) => {
+      const repo = findRepo(state, params.owner, params.repo);
+      const bytes = repo && readFileBytes(repo, params["*"]);
+      if (!bytes) return apiError(404, "Not Found");
+      return new Response(new Uint8Array(bytes), { headers: { "content-type": "application/octet-stream" } });
     },
   },
   {
