@@ -5,7 +5,7 @@ export const UNTITLED = "Untitled";
 const MAX_TITLE_BYTES = 200;
 
 /** Directories that hold notebook data other than notes. */
-const ATTACHMENTS_DIR = "attachments";
+export const ATTACHMENTS_DIR = "attachments";
 
 const NOTE_EXTENSION = /\.md$/i;
 
@@ -58,14 +58,19 @@ export function isSafePath(path: string): boolean {
  * character. An empty result is "Untitled".
  */
 export function sanitizeTitle(raw: string): string {
-  let title = raw
+  return sanitizeName(raw, UNTITLED);
+}
+
+/** The rules of `sanitizeTitle`, with `fallback` for an empty result (folders have their own). */
+export function sanitizeName(raw: string, fallback: string): string {
+  let name = raw
     .normalize("NFC")
     .replace(/[\r\n\t]+/g, " ")
     .replace(/[\u0000-\u001f\u007f]/g, "")
     .replace(/[/\\:*?"<>|]/g, "-");
-  title = tidyEnds(capBytes(tidyEnds(title), MAX_TITLE_BYTES));
-  if (title === "") return UNTITLED;
-  return title.replace(RESERVED_NAME, "$1_");
+  name = tidyEnds(capBytes(tidyEnds(name), MAX_TITLE_BYTES));
+  if (name === "") return fallback;
+  return name.replace(RESERVED_NAME, "$1_");
 }
 
 /** Leading dots would hide the file; trailing dots and spaces are dropped by Windows. */

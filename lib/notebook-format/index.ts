@@ -6,7 +6,21 @@
  *   frontmatter holding `id`, `tags`, `created` and `updated`.
  * - Reading and writing never disturb what they don't change: an unchanged
  *   note serialises to the original bytes.
+ * - A folder is a directory; one that holds no notes is kept by a `.gitkeep`
+ *   (`folders.ts`). Folder names follow the rules of titles.
  */
+export {
+  FOLDER_KEEP,
+  NEW_FOLDER,
+  folderKeepPath,
+  folderName,
+  folderOfKeepPath,
+  isInFolder,
+  isInsideOrSelf,
+  movedPath,
+  sanitizeFolderName,
+  uniqueFolderName,
+} from "./folders";
 export { readNote, writeNote, type NoteChanges, type NoteFields } from "./note-file";
 export {
   fallbackNoteId,
