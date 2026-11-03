@@ -23,8 +23,12 @@ async function pasteFile(editor: Locator, file: { name: string; type: string; ba
 
 async function newNote(page: Page, title: string): Promise<Locator> {
   await page.getByRole("button", { name: "New note" }).click();
-  await expect(page.getByRole("textbox", { name: "Title" })).toBeFocused();
+  const titleField = page.getByRole("textbox", { name: "Title" });
+  await expect(titleField).toBeFocused();
+  // Replace the placeholder title whatever is selected (notes.spec.ts covers the placeholder being selected).
+  await page.keyboard.press("ControlOrMeta+a");
   await page.keyboard.type(title);
+  await expect(titleField).toHaveValue(title);
   await page.keyboard.press("Enter");
   const body = page.getByRole("textbox", { name: "Note text" });
   await expect(body).toBeFocused();
