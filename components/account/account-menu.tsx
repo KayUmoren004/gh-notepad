@@ -19,7 +19,7 @@ export function AccountMenu({ member, className }: { member: AccountMember; clas
   return (
     <div className={cn("flex min-w-0 items-center gap-2", className)}>
       <Avatar className="size-6">
-        <AvatarImage src={member.avatarUrl} alt="" />
+        <AvatarImage src={member.avatarUrl} alt={member.login} />
         <AvatarFallback className="text-xs">{member.login.charAt(0).toUpperCase()}</AvatarFallback>
       </Avatar>
       <span className="min-w-0 flex-1 truncate text-sm font-medium" title={member.login}>
